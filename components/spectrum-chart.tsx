@@ -1,6 +1,6 @@
-import { matchFont, Text as SkiaText } from '@shopify/react-native-skia';
+import { matchFont, Skia, Line as SkiaLine, Text as SkiaText } from '@shopify/react-native-skia';
 import React, { useMemo, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CartesianAxis, CartesianChart, Line } from 'victory-native';
 import { useThemeColor } from '../hooks/use-theme-color';
 import { DistributionParams, SelectedSpectrum } from '../lib/types';
@@ -23,89 +23,95 @@ const COLORS = [
 ];
 
 const CHART_HEIGHT = 400;
-const CHART_WIDTH = Dimensions.get('window').width;
 
 export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumChartProps) {
   const [isNormalized, setIsNormalized] = useState(false);
+
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
   const iconColor = useThemeColor({}, 'icon');
-  const tickFont = useMemo(() => matchFont({ fontFamily: 'System', fontSize: 10 }), []);
-  const axisFont = useMemo(() => matchFont({ fontFamily: 'System', fontSize: 11, fontWeight: '600' }), []);
 
-  // Helper function to normalize values to 0-1 scale
+  const tickFont = useMemo(() => matchFont({ fontFamily: 'System', fontSize: 10 }), []);
+  const axisFont = useMemo(
+    () => matchFont({ fontFamily: 'System', fontSize: 11, fontWeight: '600' }),
+    [],
+  );
+
+  // ✅ RN colors -> Skia colors (fixes invisible SkiaText / axis labels)
+  const skTextColor = useMemo(() => Skia.Color(String(textColor)), [textColor]);
+  const skIconColor = useMemo(() => Skia.Color(String(iconColor)), [iconColor]);
+
   const normalizeValue = (value: number, min: number, max: number): number => {
     if (max === min) return 0.5;
     return (value - min) / (max - min);
   };
 
-  // Transform data for charts - flatten all points into a single array
+  /**
+   * ✅ PERFORMANCE FIX:
+   * Your previous approach did O(N^2) lookups via `.find()` per wavelength.
+   * This builds a wavelength->value map once per spectrum, then constructs rows in O(N).
+   */
   const chartData = useMemo(() => {
     if (data.length === 0) return [];
 
-    // Get all unique wavelengths
+    // Collect all wavelengths across all spectra
     const allWavelengths = new Set<number>();
-    data.forEach(({ data: spectrumData }) => {
-      spectrumData.forEach(point => allWavelengths.add(point.wavelength));
-    });
-
+    for (const s of data) {
+      for (const p of s.data) allWavelengths.add(p.wavelength);
+    }
     const sortedWavelengths = Array.from(allWavelengths).sort((a, b) => a - b);
 
-    // If normalization is enabled, find min/max for each spectrum
-    const spectrumRanges: { [key: string]: { min: number; max: number } } = {};
-    if (isNormalized) {
-      data.forEach(({ compound, type, data: spectrumData }) => {
-        const key = `${compound.id}-${type}`;
-        const values = spectrumData.map(point => {
-          const value = type === 'absorption' ? point.coefficient : point.normalized;
-          return value || 0;
-        }).filter(v => v !== null && v !== undefined);
+    // Pre-index each spectrum: wavelength -> value
+    const spectrumValueByWL: Record<string, Map<number, number>> = {};
+    const spectrumRanges: Record<string, { min: number; max: number }> = {};
 
-        if (values.length > 0) {
-          spectrumRanges[key] = {
-            min: Math.min(...values),
-            max: Math.max(...values)
-          };
-        }
-      });
+    for (const { compound, type, data: spectrumData } of data) {
+      const key = `${compound.id}-${type}`;
+      const m = new Map<number, number>();
+      const values: number[] = [];
+
+      for (const p of spectrumData) {
+        const raw = type === 'absorption' ? p.coefficient : p.normalized;
+        if (raw === null || raw === undefined || Number.isNaN(raw)) continue;
+        m.set(p.wavelength, raw);
+        values.push(raw);
+      }
+
+      spectrumValueByWL[key] = m;
+
+      if (isNormalized && values.length > 0) {
+        spectrumRanges[key] = { min: Math.min(...values), max: Math.max(...values) };
+      }
     }
 
-    // Create data points - one object per wavelength with all spectrum values
-    return sortedWavelengths.map(wavelength => {
-      const dataPoint: any = { wavelength };
-      
-      data.forEach(({ compound, type, data: spectrumData }) => {
-        const point = spectrumData.find(p => p.wavelength === wavelength);
-        if (point) {
-          let value = type === 'absorption' ? point.coefficient : point.normalized;
-          
-          // Normalize if enabled
-          if (isNormalized && value !== null && value !== undefined) {
-            const key = `${compound.id}-${type}`;
-            const range = spectrumRanges[key];
-            if (range) {
-              value = normalizeValue(value, range.min, range.max);
-            }
-          }
-          
-          dataPoint[`${compound.id}-${type}`] = value;
-        }
-      });
+    // Build rows for the chart
+    return sortedWavelengths.map((wavelength) => {
+      const row: Record<string, any> = { wavelength };
 
-      return dataPoint;
+      for (const { compound, type } of data) {
+        const key = `${compound.id}-${type}`;
+        const v = spectrumValueByWL[key]?.get(wavelength);
+        if (v === undefined) continue;
+
+        if (isNormalized) {
+          const r = spectrumRanges[key];
+          row[key] = r ? normalizeValue(v, r.min, r.max) : v;
+        } else {
+          row[key] = v;
+        }
+      }
+
+      return row;
     });
   }, [data, isNormalized]);
 
-  // Get all yKeys (one per spectrum)
-  const yKeys = useMemo(() => {
-    return data.map(({ compound, type }) => `${compound.id}-${type}`);
-  }, [data]);
+  const yKeys = useMemo(() => data.map(({ compound, type }) => `${compound.id}-${type}`), [data]);
 
   if (isLoading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor }]}>
         <View style={styles.header}>
-          <Text style={styles.title}>Spectrum Comparison</Text>
+          <Text style={[styles.title, { color: textColor }]}>Spectrum Comparison</Text>
         </View>
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading...</Text>
@@ -116,9 +122,9 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
 
   if (data.length === 0) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor }]}>
         <View style={styles.header}>
-          <Text style={styles.title}>Spectrum Comparison</Text>
+          <Text style={[styles.title, { color: textColor }]}>Spectrum Comparison</Text>
         </View>
         <View style={styles.loadingContainer}>
           <Text style={styles.emptyText}>Select spectra to view comparison</Text>
@@ -128,33 +134,56 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
   }
 
   const validData = useMemo(() => {
-    return chartData.filter(point => 
-      yKeys.some(key => point[key] !== null && point[key] !== undefined && !isNaN(point[key]))
+    return chartData.filter((point) =>
+      yKeys.some((key) => {
+        const v = point[key];
+        return v !== null && v !== undefined && !Number.isNaN(v);
+      }),
     );
   }, [chartData, yKeys]);
-  
-  // Calculate domain for safety
+
   const domain = useMemo(() => {
     if (validData.length === 0) return undefined;
-    
-    const allXValues = validData.map(p => p.wavelength).filter(v => !isNaN(v));
-    const allYValues = validData.flatMap(point => 
-      yKeys.map(key => point[key]).filter(v => v !== null && v !== undefined && !isNaN(v))
+
+    const allXValues = validData.map((p) => p.wavelength).filter(Number.isFinite);
+    const allYValues = validData.flatMap((p) =>
+      yKeys.map((k) => p[k]).filter((v) => v !== null && v !== undefined && Number.isFinite(v)),
     );
-    
+
     if (allXValues.length === 0 || allYValues.length === 0) return undefined;
-    
+
+    let xMin = Math.min(...allXValues);
+    let xMax = Math.max(...allXValues);
+    let yMin = Math.min(...allYValues);
+    let yMax = Math.max(...allYValues);
+
+    if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || !Number.isFinite(yMin) || !Number.isFinite(yMax)) {
+      return undefined;
+    }
+
+    // Avoid zero-size domains (can break ticks/lines)
+    if (xMin === xMax) {
+      xMin -= 1;
+      xMax += 1;
+    }
+    if (yMin === yMax) {
+      yMin -= 1;
+      yMax += 1;
+    }
+
+    // Optional padding so lines aren't glued to edges
+    const yPad = (yMax - yMin) * 0.04;
     return {
-      x: [Math.min(...allXValues), Math.max(...allXValues)] as [number, number],
-      y: [Math.min(...allYValues), Math.max(...allYValues)] as [number, number]
+      x: [xMin, xMax] as [number, number],
+      y: [yMin - yPad, yMax + yPad] as [number, number],
     };
   }, [validData, yKeys]);
-  
+
   if (validData.length === 0 || domain === undefined) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor }]}>
         <View style={styles.header}>
-          <Text style={styles.title}>Spectrum Comparison</Text>
+          <Text style={[styles.title, { color: textColor }]}>Spectrum Comparison</Text>
         </View>
         <View style={styles.loadingContainer}>
           <Text style={styles.emptyText}>No valid spectrum data available</Text>
@@ -167,9 +196,10 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
     <View style={[styles.container, { backgroundColor }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: textColor }]}>Spectrum Comparison</Text>
+
         <TouchableOpacity
           style={[styles.button, { borderColor: iconColor }, isNormalized && styles.buttonActive]}
-          onPress={() => setIsNormalized(!isNormalized)}
+          onPress={() => setIsNormalized((prev) => !prev)}
         >
           <Text style={[styles.buttonText, { color: textColor }, isNormalized && styles.buttonTextActive]}>
             {isNormalized ? 'Raw Data' : 'Normalize'}
@@ -177,104 +207,143 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
         </TouchableOpacity>
       </View>
 
-        
-        
-        <View style={styles.chartContainer}>
-          <CartesianChart
-            data={validData}
-            xKey="wavelength"
-            yKeys={yKeys}
-            domain={domain}
-            padding={{ left: 60, right: 20, top: 20, bottom: 60 }}
-            renderOutside={({ chartBounds, xScale, yScale, xTicks, yTicks }) => {
-              return (
-                <>
-                  {yTicks.map((tick: number) => {
-                    const y = yScale(tick);
-                    if (y < chartBounds.top - 4 || y > chartBounds.bottom + 4) return null;
-                    return (
+      <View style={styles.chartContainer}>
+        <CartesianChart
+          data={validData}
+          xKey="wavelength"
+          yKeys={yKeys}
+          domain={domain}
+          renderOutside={({ chartBounds, xScale, yScale, xTicks, yTicks }) => {
+            const xTickValues =
+              xTicks && xTicks.length > 0
+                ? xTicks
+                : typeof xScale.ticks === 'function'
+                  ? xScale.ticks()
+                  : [];
+            const yTickValues =
+              yTicks && yTicks.length > 0
+                ? yTicks
+                : typeof yScale.ticks === 'function'
+                  ? yScale.ticks(5)
+                  : [];
+
+            return (
+              <>
+                {/* Y tick labels + tick marks */}
+                {yTickValues.map((tick: number) => {
+                  const y = yScale(tick);
+                  if (y < chartBounds.top - 8 || y > chartBounds.bottom + 8) return null;
+
+                  return (
+                    <React.Fragment key={`y-tick-${tick}`}>
+                      <SkiaLine
+                        p1={{ x: chartBounds.left - 8, y }}
+                        p2={{ x: chartBounds.left, y }}
+                        color={skIconColor}
+                        strokeWidth={1}
+                      />
                       <SkiaText
-                        key={`y-tick-label-${tick}`}
                         x={4}
                         y={y + 4}
                         text={Number(tick).toFixed(2)}
                         font={tickFont}
-                        color={textColor}
+                        color={skTextColor}
                       />
-                    );
-                  })}
+                    </React.Fragment>
+                  );
+                })}
 
-                  {xTicks.map((tick: number) => {
-                    const x = xScale(tick);
-                    if (x < chartBounds.left - 8 || x > chartBounds.right + 8) return null;
-                    return (
+                {/* X tick labels + tick marks */}
+                {xTickValues.map((tick: number) => {
+                  const x = xScale(tick);
+                  if (x < chartBounds.left - 12 || x > chartBounds.right + 12) return null;
+
+                  const labelX = Math.max(chartBounds.left + 2, x - 12);
+
+                  return (
+                    <React.Fragment key={`x-tick-${tick}`}>
+                      <SkiaLine
+                        p1={{ x, y: chartBounds.bottom }}
+                        p2={{ x, y: chartBounds.bottom + 8 }}
+                        color={skIconColor}
+                        strokeWidth={1}
+                      />
                       <SkiaText
-                        key={`x-tick-label-${tick}`}
-                        x={x - 12}
-                        y={chartBounds.bottom + 18}
+                        x={labelX}
+                        y={chartBounds.bottom + 22}
                         text={Number(tick).toFixed(0)}
                         font={tickFont}
-                        color={textColor}
+                        color={skTextColor}
                       />
-                    );
-                  })}
+                    </React.Fragment>
+                  );
+                })}
 
-                  <SkiaText
-                    x={4}
-                    y={chartBounds.top + 12}
-                    text={isNormalized ? 'Norm' : 'Value'}
-                    font={axisFont}
-                    color={textColor}
-                  />
+                {/* Axis titles */}
+                <SkiaText
+                  x={4}
+                  y={chartBounds.top + 14}
+                  text={isNormalized ? 'Norm' : 'Value'}
+                  font={axisFont}
+                  color={skTextColor}
+                />
 
-                  <SkiaText
-                    x={chartBounds.left + (chartBounds.right - chartBounds.left) / 2 - 48}
-                    y={chartBounds.bottom + 38}
-                    text="Wavelength (nm)"
-                    font={axisFont}
-                    color={textColor}
-                  />
-                </>
-              );
-            }}
-          >
-            {({ points, xScale, yScale, xTicks, yTicks }) => {
-              if (!xScale || !yScale) return null;
-              return (
-                <>
-                  <CartesianAxis
-                    axisSide={{ x: 'bottom', y: 'left' }}
-                    tickCount={5}
-                    xScale={xScale}
-                    yScale={yScale}
-                    xTicksNormalized={xTicks}
-                    yTicksNormalized={yTicks}
-                    labelColor={textColor}
-                    lineColor={iconColor}
-                    lineWidth={1.5}
-                  />
-                  {data.map(({ compound, type }, index) => {
-                    const yKey = `${compound.id}-${type}`;
-                    const color = COLORS[index % COLORS.length];
-                    const linePoints = points[yKey] || [];
-                    if (linePoints.length === 0) return null;
-                    return (
-                      <Line
-                        key={yKey}
-                        points={linePoints}
-                        color={color}
-                        strokeWidth={2}
-                        curveType="linear"
-                      />
-                    );
-                  })}
-                </>
-              );
-            }}
-          </CartesianChart>
-        </View>
+                <SkiaText
+                  x={chartBounds.left + (chartBounds.right - chartBounds.left) / 2 - 60}
+                  y={chartBounds.bottom + 36}
+                  text="Wavelength (nm)"
+                  font={axisFont}
+                  color={skTextColor}
+                />
+              </>
+            );
+          }}
+        >
+          {({ points, xScale, yScale, xTicks, yTicks }) => {
+            if (!xScale || !yScale) return null;
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.legendContainer, { borderTopColor: iconColor }]}>
+            return (
+              <>
+                <CartesianAxis
+                  axisSide={{ x: 'bottom', y: 'left' }}
+                  tickCount={5}
+                  xScale={xScale}
+                  yScale={yScale}
+                  xTicksNormalized={xTicks}
+                  yTicksNormalized={yTicks}
+                  // CartesianAxis expects string colors; tick text is drawn via SkiaText in renderOutside.
+                  labelColor={String(textColor)}
+                  lineColor={String(iconColor)}
+                  lineWidth={1.5}
+                />
+
+                {data.map(({ compound, type }, index) => {
+                  const yKey = `${compound.id}-${type}`;
+                  const color = COLORS[index % COLORS.length];
+                  const linePoints = points[yKey] || [];
+                  if (linePoints.length === 0) return null;
+
+                  return (
+                    <Line
+                      key={yKey}
+                      points={linePoints}
+                      color={color}
+                      strokeWidth={2}
+                      curveType="linear"
+                    />
+                  );
+                })}
+              </>
+            );
+          }}
+        </CartesianChart>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={[styles.legendContainer, { borderTopColor: iconColor }]}
+      >
         <View style={styles.legend}>
           {data.map(({ compound, type }, index) => {
             const color = COLORS[index % COLORS.length];
@@ -296,7 +365,6 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
 const styles = StyleSheet.create({
   container: {
     borderRadius: 8,
-    padding: 16,
     marginVertical: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -330,33 +398,10 @@ const styles = StyleSheet.create({
   buttonTextActive: {
     color: '#fff',
   },
-  chartWrapper: {
-    width: '100%',
-  },
-  yAxisLabelContainer: {
-    position: 'absolute',
-    left: 0,
-    top: CHART_HEIGHT / 2 - 40,
-    width: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-    transform: [{ rotate: '-90deg' }],
-  },
   chartContainer: {
     height: CHART_HEIGHT,
     width: '100%',
     backgroundColor: 'transparent',
-  },
-  xAxisLabelContainer: {
-    width: '100%',
-    alignItems: 'center',
-    marginTop: 8,
-    marginLeft: 60,
-  },
-  axisLabel: {
-    fontSize: 12,
-    fontWeight: '600',
   },
   loadingContainer: {
     height: CHART_HEIGHT,
@@ -391,17 +436,5 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 12,
-    color: '#666',
-  },
-  tickLabel: {
-    position: 'absolute',
-    fontSize: 10,
-    opacity: 0.9,
-  },
-  axisTitle: {
-    position: 'absolute',
-    fontSize: 11,
-    fontWeight: '600',
-    opacity: 0.9,
   },
 });
