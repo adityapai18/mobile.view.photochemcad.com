@@ -23,16 +23,22 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
     const exists = selectedSpectra.some(
       s => s.compound.id === spectrum.compound.id && s.type === spectrum.type
     );
-    if (exists) return;
+    if (exists) {
+      console.log('Spectrum already selected:', spectrum.compound.name, spectrum.type);
+      return;
+    }
 
+    console.log('Adding spectrum:', spectrum.compound.name, spectrum.type);
     setIsLoading(true);
     try {
       // Fetch spectrum data
       let data;
       if (spectrum.type === 'absorption') {
         data = await getAbsorptionData(spectrum.compound.id);
+        console.log('Absorption data fetched:', data?.length, 'points');
       } else {
         data = await getEmissionData(spectrum.compound.id);
+        console.log('Emission data fetched:', data?.length, 'points');
       }
 
       if (data && data.length > 0) {
@@ -44,14 +50,19 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
           normalized: 'normalized' in point ? point.normalized : undefined,
         }));
 
-        setSelectedSpectra(prev => [
-          ...prev,
-          {
-            compound: spectrum.compound,
-            type: spectrum.type,
-            data: spectrumData,
-          },
-        ]);
+        const newSpectrum = {
+          compound: spectrum.compound,
+          type: spectrum.type,
+          data: spectrumData,
+        };
+
+        setSelectedSpectra(prev => {
+          const updated = [...prev, newSpectrum];
+          console.log('Updated selectedSpectra, count:', updated.length);
+          return updated;
+        });
+      } else {
+        console.warn('No data returned for spectrum:', spectrum.compound.name, spectrum.type);
       }
     } catch (error) {
       console.error('Error loading spectrum data:', error);
@@ -106,28 +117,37 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
     }
 
     if (item.type === 'selected') {
-      if (selectedSpectra.length === 0) return null;
-      
       return (
         <View style={styles.selectedContainer}>
           <ThemedText type="subtitle" style={styles.selectedTitle}>
-            Selected Spectra ({selectedSpectra.length})
+            Selected Spectra ({selectedSpectra.length}) 
           </ThemedText>
-          <View style={styles.selectedList}>
-            {selectedSpectra.map((item, index) => (
-              <View key={`${item.compound.id}-${item.type}-${index}`} style={styles.selectedItem}>
-                <ThemedText style={styles.selectedText} numberOfLines={1}>
-                  {item.compound.name} ({item.type})
-                </ThemedText>
-                <TouchableOpacity
-                  onPress={() => handleSpectrumRemove(item.compound.id, item.type)}
-                  style={styles.removeButton}
-                >
-                  <ThemedText style={styles.removeText}>×</ThemedText>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
+          {selectedSpectra.length === 0 ? (
+            <ThemedText style={styles.emptySelectedText}>
+              No spectra selected. Click Abs or Em buttons to add spectra.
+            </ThemedText>
+          ) : (
+            <View style={styles.selectedList}>
+              {selectedSpectra.map((item) => (
+                <View key={`${item.compound.id}`} style={styles.selectedItem}>
+                  <View style={styles.selectedItemContent}>
+                    <ThemedText style={styles.selectedCompoundName}>
+                      {item.compound.name}
+                    </ThemedText>
+                    <ThemedText style={styles.selectedType} numberOfLines={1}>
+                      {item.type === 'absorption' ? 'Abs' : 'Em'}
+                    </ThemedText>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleSpectrumRemove(item.compound.id, item.type)}
+                    style={styles.removeButton}
+                  >
+                    <ThemedText style={styles.removeText}>×</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       );
     }
@@ -163,6 +183,7 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
         style={{ backgroundColor }}
         scrollEnabled={true}
         removeClippedSubviews={false}
+        extraData={selectedSpectra.length}
       />
     </SafeAreaView>
   );
@@ -220,17 +241,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 16,
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(59, 130, 246, 0.3)',
-    maxWidth: '48%',
   },
-  selectedText: {
-    fontSize: 12,
-    flex: 1,
+  selectedItemContent: {
     marginRight: 6,
+  },
+  selectedCompoundName: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  selectedType: {
+    fontSize: 11,
+    opacity: 0.7,
+  },
+  emptySelectedText: {
+    fontSize: 12,
+    opacity: 0.6,
+    fontStyle: 'italic',
+    paddingVertical: 8,
   },
   removeButton: {
     padding: 2,

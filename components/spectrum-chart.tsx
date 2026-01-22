@@ -1,7 +1,8 @@
-import { matchFont, Skia, Line as SkiaLine, Text as SkiaText } from '@shopify/react-native-skia';
+import { useFont } from '@shopify/react-native-skia';
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { CartesianAxis, CartesianChart, Line } from 'victory-native';
+import { CartesianAxis, CartesianChart, Line, useChartTransformState } from 'victory-native';
+import Mono from '../assets/fonts/Mono.ttf';
 import { useThemeColor } from '../hooks/use-theme-color';
 import { DistributionParams, SelectedSpectrum } from '../lib/types';
 
@@ -31,15 +32,12 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
   const textColor = useThemeColor({}, 'text');
   const iconColor = useThemeColor({}, 'icon');
 
-  const tickFont = useMemo(() => matchFont({ fontFamily: 'System', fontSize: 10 }), []);
-  const axisFont = useMemo(
-    () => matchFont({ fontFamily: 'System', fontSize: 11, fontWeight: '600' }),
-    [],
-  );
+  const font = useFont(Mono, 12);
 
-  // ✅ RN colors -> Skia colors (fixes invisible SkiaText / axis labels)
-  const skTextColor = useMemo(() => Skia.Color(String(textColor)), [textColor]);
-  const skIconColor = useMemo(() => Skia.Color(String(iconColor)), [iconColor]);
+  const { state: transformState } = useChartTransformState({
+    scaleX: 1.0, // Initial X-axis scale
+    scaleY: 1.0, // Initial Y-axis scale
+  });
 
   const normalizeValue = (value: number, min: number, max: number): number => {
     if (max === min) return 0.5;
@@ -109,7 +107,7 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
 
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor }]}>
+      <View style={{ backgroundColor }}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: textColor }]}>Spectrum Comparison</Text>
         </View>
@@ -122,7 +120,7 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
 
   if (data.length === 0) {
     return (
-      <View style={[styles.container, { backgroundColor }]}>
+      <View style={[{ backgroundColor }]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: textColor }]}>Spectrum Comparison</Text>
         </View>
@@ -181,7 +179,7 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
 
   if (validData.length === 0 || domain === undefined) {
     return (
-      <View style={[styles.container, { backgroundColor }]}>
+      <View style={{ backgroundColor }}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: textColor }]}>Spectrum Comparison</Text>
         </View>
@@ -193,7 +191,7 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
   }
 
   return (
-    <View style={[styles.container, { backgroundColor }]}>
+    <View style={[{ backgroundColor }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: textColor }]}>Spectrum Comparison</Text>
 
@@ -213,91 +211,12 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
           xKey="wavelength"
           yKeys={yKeys}
           domain={domain}
-          renderOutside={({ chartBounds, xScale, yScale, xTicks, yTicks }) => {
-            const xTickValues =
-              xTicks && xTicks.length > 0
-                ? xTicks
-                : typeof xScale.ticks === 'function'
-                  ? xScale.ticks()
-                  : [];
-            const yTickValues =
-              yTicks && yTicks.length > 0
-                ? yTicks
-                : typeof yScale.ticks === 'function'
-                  ? yScale.ticks(5)
-                  : [];
 
-            return (
-              <>
-                {/* Y tick labels + tick marks */}
-                {yTickValues.map((tick: number) => {
-                  const y = yScale(tick);
-                  if (y < chartBounds.top - 8 || y > chartBounds.bottom + 8) return null;
-
-                  return (
-                    <React.Fragment key={`y-tick-${tick}`}>
-                      <SkiaLine
-                        p1={{ x: chartBounds.left - 8, y }}
-                        p2={{ x: chartBounds.left, y }}
-                        color={skIconColor}
-                        strokeWidth={1}
-                      />
-                      <SkiaText
-                        x={4}
-                        y={y + 4}
-                        text={Number(tick).toFixed(2)}
-                        font={tickFont}
-                        color={skTextColor}
-                      />
-                    </React.Fragment>
-                  );
-                })}
-
-                {/* X tick labels + tick marks */}
-                {xTickValues.map((tick: number) => {
-                  const x = xScale(tick);
-                  if (x < chartBounds.left - 12 || x > chartBounds.right + 12) return null;
-
-                  const labelX = Math.max(chartBounds.left + 2, x - 12);
-
-                  return (
-                    <React.Fragment key={`x-tick-${tick}`}>
-                      <SkiaLine
-                        p1={{ x, y: chartBounds.bottom }}
-                        p2={{ x, y: chartBounds.bottom + 8 }}
-                        color={skIconColor}
-                        strokeWidth={1}
-                      />
-                      <SkiaText
-                        x={labelX}
-                        y={chartBounds.bottom + 22}
-                        text={Number(tick).toFixed(0)}
-                        font={tickFont}
-                        color={skTextColor}
-                      />
-                    </React.Fragment>
-                  );
-                })}
-
-                {/* Axis titles */}
-                <SkiaText
-                  x={4}
-                  y={chartBounds.top + 14}
-                  text={isNormalized ? 'Norm' : 'Value'}
-                  font={axisFont}
-                  color={skTextColor}
-                />
-
-                <SkiaText
-                  x={chartBounds.left + (chartBounds.right - chartBounds.left) / 2 - 60}
-                  y={chartBounds.bottom + 36}
-                  text="Wavelength (nm)"
-                  font={axisFont}
-                  color={skTextColor}
-                />
-              </>
-            );
+          axisOptions={{
+            font,
+            labelColor: textColor
           }}
+          
         >
           {({ points, xScale, yScale, xTicks, yTicks }) => {
             if (!xScale || !yScale) return null;
@@ -330,6 +249,7 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
                       color={color}
                       strokeWidth={2}
                       curveType="linear"
+                      animate={{ type: "timing", duration: 300 }}
                     />
                   );
                 })}
@@ -363,15 +283,6 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
 }
 
 const styles = StyleSheet.create({
-  container: {
-    borderRadius: 8,
-    marginVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

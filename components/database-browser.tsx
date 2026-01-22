@@ -51,28 +51,6 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
     setSearchQuery('');
   };
 
-  const handleCompoundSelect = (compound: Compound) => {
-    // Toggle absorption
-    const hasAbsorption = selectedSpectra.some(
-      s => s.compound.id === compound.id && s.type === 'absorption'
-    );
-    if (hasAbsorption) {
-      onSpectrumRemove(compound.id, 'absorption');
-    } else if (compound.has_absorption_data === '1') {
-      onSpectrumAdd({ compound, type: 'absorption' });
-    }
-
-    // Toggle emission
-    const hasEmission = selectedSpectra.some(
-      s => s.compound.id === compound.id && s.type === 'emission'
-    );
-    if (hasEmission) {
-      onSpectrumRemove(compound.id, 'emission');
-    } else if (compound.has_emission_data === '1') {
-      onSpectrumAdd({ compound, type: 'emission' });
-    }
-  };
-
   const isSelected = (compound: Compound, type: 'absorption' | 'emission') => {
     return selectedSpectra.some(
       s => s.compound.id === compound.id && s.type === type
@@ -132,7 +110,7 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
   const iconColor = useThemeColor({}, 'icon');
 
   return (
-    <ThemedView style={[styles.container, { backgroundColor }]}>
+    <ThemedView style={[styles.container, ]}>
       <ThemedText type="title" style={styles.title}>Database Browser</ThemedText>
 
       {/* Database Selection */}
@@ -219,9 +197,6 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 8,
     marginTop: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },

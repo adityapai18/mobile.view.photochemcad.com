@@ -3,7 +3,7 @@ const defaultConfig = getDefaultConfig(__dirname);
 
 module.exports = {
   resolver: {
-    assetExts: [...defaultConfig.resolver.assetExts, 'db', 'sqlite', 'json'],
+    assetExts: [...defaultConfig.resolver.assetExts, 'db', 'sqlite', 'json', 'ttf'],
   },
   transformer: {
     getTransformOptions: async () => ({
