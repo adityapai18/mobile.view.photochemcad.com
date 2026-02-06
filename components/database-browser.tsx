@@ -1,6 +1,8 @@
+import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useThemeColor } from '../hooks/use-theme-color';
+import { getCompoundStructureImageSource } from '../lib/compound-structure-images.generated';
 import { Compound, getCompoundsByDatabase, searchCompoundsInDatabase } from '../lib/database';
 import { SelectedSpectrum } from '../lib/types';
 import { ThemedText } from './themed-text';
@@ -62,9 +64,19 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
     const hasEm = compound.has_emission_data === '1';
     const absSelected = isSelected(compound, 'absorption');
     const emSelected = isSelected(compound, 'emission');
+    const structureImageSource = getCompoundStructureImageSource(compound.database_name, compound.id);
 
     return (
       <View style={styles.compoundItem}>
+        {structureImageSource != null ? (
+          <Image
+            source={structureImageSource}
+            style={styles.compoundStructureImage}
+            contentFit="contain"
+          />
+        ) : (
+          <View style={[styles.compoundStructurePlaceholder, { borderColor: iconColor }]} />
+        )}
         <View style={styles.compoundInfo}>
           <ThemedText style={styles.compoundName}>{compound.name}</ThemedText>
           <ThemedText style={[styles.compoundId, { color: iconColor }]}>{compound.id}</ThemedText>
@@ -258,6 +270,21 @@ const styles = StyleSheet.create({
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+  },
+  compoundStructureImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 4,
+    marginRight: 12,
+    backgroundColor: '#f5f5f5',
+  },
+  compoundStructurePlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 4,
+    marginRight: 12,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
   },
   compoundInfo: {
     flex: 1,

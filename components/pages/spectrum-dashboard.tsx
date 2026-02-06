@@ -5,6 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemeColor } from '../../hooks/use-theme-color';
 import { Compound, getAbsorptionData, getEmissionData } from '../../lib/database';
 import { DistributionParams, SelectedSpectrum } from '../../lib/types';
+import { BrandFooter } from '../brand/brand-footer';
+import { BrandHeader } from '../brand/brand-header';
+import { CompoundComparisonTable } from '../compound-comparison-table';
 import { DatabaseBrowser } from '../database-browser';
 import { DistributionModal } from '../modals/distribution-modal';
 import { EnergyTransferModal } from '../modals/energy-transfer-modal';
@@ -123,19 +126,22 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
   ], []);
 
   const renderHeader = () => (
-    <ThemedView style={styles.header}>
-      <View>
-        <View style={styles.titleContainer}>
-          <View style={styles.titleLine} />
-          <View>
-            <ThemedText type="title" style={styles.title}>Spectrum Comparison Dashboard</ThemedText>
-            <ThemedText style={styles.subtitle}>
-              Compare absorption and emission spectra from the PhotochemCAD database
-            </ThemedText>
+    <View>
+      <BrandHeader />
+      <ThemedView style={styles.header}>
+        <View>
+          <View style={styles.titleContainer}>
+            <View style={styles.titleLine} />
+            <View>
+              <ThemedText type="title" style={styles.title}>Spectrum Comparison Dashboard</ThemedText>
+              <ThemedText style={styles.subtitle}>
+                Compare absorption and emission spectra from the PhotochemCAD database
+              </ThemedText>
+            </View>
           </View>
         </View>
-      </View>
-    </ThemedView>
+      </ThemedView>
+    </View>
   );
 
   const renderItem = ({ item }: { item: { id: string; type: 'browser' | 'chart' | 'selected' | 'modules' } }) => {
@@ -217,6 +223,9 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
     }
 
     if (item.type === 'chart') {
+      const uniqueCompounds = Array.from(
+        new Map(selectedSpectra.map((s) => [s.compound.id, s.compound])).values()
+      );
       return (
         <View style={styles.chartContainer}>
           {isLoading && (
@@ -229,6 +238,7 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
             isLoading={isLoading}
             distributions={distributions}
           />
+          <CompoundComparisonTable compounds={uniqueCompounds} />
         </View>
       );
     }
@@ -243,6 +253,7 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ListHeaderComponent={renderHeader}
+        ListFooterComponent={<BrandFooter />}
         showsVerticalScrollIndicator={true}
         nestedScrollEnabled={true}
         style={{ backgroundColor }}

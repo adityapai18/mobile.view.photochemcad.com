@@ -18,12 +18,49 @@ export interface EmissionData {
 
 export interface Compound {
   id: string;
+  id_prefix?: string | null;
+  numeric_id?: number | null;
   name: string;
   slug: string;
+  cas?: string | null;
+  database_id?: number | null;
+  category_id?: string | null;
   database_name: string;
+  database_slug?: string | null;
   category_name: string;
+  class_name?: string | null;
+  synonym?: string | null;
+  chemical_formula?: string | null;
+  molecular_weight?: number | null;
+  source_name?: string | null;
+  source_url?: string | null;
+  absorption_wavelength?: string | null;
+  absorption_epsilon?: string | null;
+  absorption_coefficient?: string | null;
+  absorption_solvent?: string | null;
+  absorption_instrument?: string | null;
+  absorption_reference_epsilon?: string | null;
+  absorption_reference?: string | null;
+  absorption_date?: string | null;
+  absorption_by?: string | null;
+  emission_wavelength?: string | null;
+  emission_fluorescence_peaks?: string | null;
+  emission_quantum_yield?: number | null;
+  emission_reference_quantum_yield?: number | null;
+  emission_solvent?: string | null;
+  emission_instrument?: string | null;
+  emission_reference?: string | null;
+  emission_date?: string | null;
+  emission_by?: string | null;
+  has_structure_tif?: string | null;
+  has_structure_png?: string | null;
   has_absorption_data: string; // '0' or '1'
+  has_absorption_tif?: string | null;
   has_emission_data: string;   // '0' or '1'
+  has_emission_tif?: string | null;
+  has_structure_labeled_tif?: string | null;
+  has_structure_labeled_png?: string | null;
+  has_structure_cdx?: string | null;
 }
 
 export interface DatabaseCategory {
