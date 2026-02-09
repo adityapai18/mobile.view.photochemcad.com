@@ -19,9 +19,6 @@ import { SpectrumChart } from '../spectrum-chart';
 import { ThemedText } from '../themed-text';
 import { ThemedView } from '../themed-view';
 
-interface SpectrumDashboardProps {
-  databases?: { name: string; count: number }[];
-}
 
 type CalculationModuleId =
   | 'oscillator-strength'
@@ -38,7 +35,7 @@ const CALCULATION_MODULES: { id: CalculationModuleId; title: string }[] = [
   { id: 'multiple-component-analysis', title: 'Multiple Component Analysis' },
 ];
 
-export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
+export function SpectrumDashboard() {
   const [selectedSpectra, setSelectedSpectra] = useState<SelectedSpectrum[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const backgroundColor = useThemeColor({}, 'background');
@@ -149,7 +146,6 @@ export function SpectrumDashboard({ databases = [] }: SpectrumDashboardProps) {
       return (
         <View style={styles.browserContainer}>
           <DatabaseBrowser
-            databases={databases}
             onSpectrumAdd={handleSpectrumAdd}
             onSpectrumRemove={handleSpectrumRemove}
             selectedSpectra={selectedSpectra}

@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useThemeColor } from '../hooks/use-theme-color';
 import { getCompoundStructureImageSource } from '../lib/compound-structure-images.generated';
-import { Compound, getCompoundsByDatabase, searchCompoundsInDatabase } from '../lib/database';
+import { Compound, getCompounds, searchCompounds } from '../lib/database';
 import { SelectedSpectrum } from '../lib/types';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
@@ -12,28 +12,25 @@ interface DatabaseBrowserProps {
   onSpectrumAdd: (spectrum: { compound: Compound; type: 'absorption' | 'emission' }) => void;
   onSpectrumRemove: (compoundId: string, type: 'absorption' | 'emission') => void;
   selectedSpectra: SelectedSpectrum[];
-  databases: { name: string; count: number }[];
 }
 
-export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpectra, databases }: DatabaseBrowserProps) {
-  const [selectedDatabase, setSelectedDatabase] = useState<string | null>(null);
+function compoundProperty(label: string, value: string | number | null | undefined): { label: string; value: string } | null {
+  if (value == null || value === '') return null;
+  return { label, value: String(value) };
+}
+
+export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpectra }: DatabaseBrowserProps) {
   const [compounds, setCompounds] = useState<Compound[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedCompound, setSelectedCompound] = useState<Compound | null>(null);
 
-  const selectedCompoundIds = new Set(
-    selectedSpectra.map(s => s.compound.id)
-  );
-
-  const loadCompounds = async (databaseName: string, query: string = '') => {
+  const loadCompounds = async (query: string = '') => {
     setIsLoading(true);
     try {
-      let results: Compound[];
-      if (query.trim()) {
-        results = await searchCompoundsInDatabase(databaseName, query);
-      } else {
-        results = await getCompoundsByDatabase(databaseName, 50);
-      }
+      const results = query.trim()
+        ? await searchCompounds(query)
+        : await getCompounds();
       setCompounds(results);
     } catch (error) {
       console.error('Error loading compounds:', error);
@@ -43,15 +40,8 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
   };
 
   useEffect(() => {
-    if (selectedDatabase) {
-      loadCompounds(selectedDatabase, searchQuery);
-    }
-  }, [selectedDatabase, searchQuery]);
-
-  const handleDatabaseSelect = (databaseName: string) => {
-    setSelectedDatabase(databaseName);
-    setSearchQuery('');
-  };
+    loadCompounds(searchQuery);
+  }, [searchQuery]);
 
   const isSelected = (compound: Compound, type: 'absorption' | 'emission') => {
     return selectedSpectra.some(
@@ -68,19 +58,25 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
 
     return (
       <View style={styles.compoundItem}>
-        {structureImageSource != null ? (
-          <Image
-            source={structureImageSource}
-            style={styles.compoundStructureImage}
-            contentFit="contain"
-          />
-        ) : (
-          <View style={[styles.compoundStructurePlaceholder, { borderColor: iconColor }]} />
-        )}
-        <View style={styles.compoundInfo}>
-          <ThemedText style={styles.compoundName}>{compound.name}</ThemedText>
-          <ThemedText style={[styles.compoundId, { color: iconColor }]}>{compound.id}</ThemedText>
-        </View>
+        <TouchableOpacity
+          style={styles.compoundRowTouchable}
+          onPress={() => setSelectedCompound(compound)}
+          activeOpacity={0.7}
+        >
+          {structureImageSource != null ? (
+            <Image
+              source={structureImageSource}
+              style={styles.compoundStructureImage}
+              contentFit="contain"
+            />
+          ) : (
+            <View style={[styles.compoundStructurePlaceholder, { borderColor: iconColor }]} />
+          )}
+          <View style={styles.compoundInfo}>
+            <ThemedText style={styles.compoundName}>{compound.name}</ThemedText>
+            <ThemedText style={[styles.compoundId, { color: iconColor }]}>{compound.id}</ThemedText>
+          </View>
+        </TouchableOpacity>
         <View style={styles.checkboxContainer}>
           {hasAbs && (
             <TouchableOpacity
@@ -125,80 +121,98 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
     <ThemedView style={[styles.container, ]}>
       <ThemedText type="title" style={styles.title}>Database Browser</ThemedText>
 
-      {/* Database Selection */}
       <View style={styles.section}>
-        <ThemedText style={[styles.sectionTitle, { color: iconColor }]}>Select Database</ThemedText>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={databases}
-          keyExtractor={(item) => item.name}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                styles.databaseButton,
-                selectedDatabase === item.name && styles.databaseButtonSelected
-              ]}
-              onPress={() => handleDatabaseSelect(item.name)}
-            >
-              <ThemedText
-                style={[
-                  styles.databaseButtonText,
-                  selectedDatabase === item.name && styles.databaseButtonTextSelected
-                ]}
-              >
-                {item.name} ({item.count})
-              </ThemedText>
-            </TouchableOpacity>
-          )}
+        <TextInput
+          style={[styles.searchInput, { borderColor: iconColor, color: textColor }]}
+          placeholder="Search compounds..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor={iconColor}
         />
       </View>
 
-      {/* Search */}
-      {selectedDatabase && (
-        <View style={styles.section}>
-          <TextInput
-            style={[styles.searchInput, { borderColor: iconColor, color: textColor }]}
-            placeholder="Search compounds..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor={iconColor}
-          />
-        </View>
-      )}
+      <View style={styles.section}>
+        <ThemedText style={[styles.sectionTitle, { color: iconColor }]}>Compounds</ThemedText>
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#3b82f6" />
+          </View>
+        ) : (
+          <View style={[styles.compoundsListContainer, { borderColor: iconColor }]}>
+            {compounds.length === 0 ? (
+              <View style={styles.loadingContainer}>
+                <ThemedText style={[styles.emptyText, { color: iconColor }]}>No compounds found</ThemedText>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.compoundsList}
+                contentContainerStyle={styles.compoundsListContent}
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+              >
+                {compounds.map((compound) => (
+                  <React.Fragment key={compound.id}>
+                    {renderCompound({ item: compound })}
+                  </React.Fragment>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        )}
+      </View>
 
-      {/* Compounds List */}
-      {selectedDatabase && (
-        <View style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: iconColor }]}>Compounds</ThemedText>
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#3b82f6" />
-            </View>
-          ) : (
-            <View style={[styles.compoundsListContainer, { borderColor: iconColor }]}>
-              {compounds.length === 0 ? (
-                <View style={styles.loadingContainer}>
-                  <ThemedText style={[styles.emptyText, { color: iconColor }]}>No compounds found</ThemedText>
+      <Modal
+        visible={selectedCompound != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedCompound(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedCompound(null)}>
+          <Pressable style={[styles.modalContent, { backgroundColor }]} onPress={e => e.stopPropagation()}>
+            {selectedCompound && (
+              <>
+                <View style={styles.modalHeader}>
+                  <ThemedText type="title" style={styles.modalTitle}>{selectedCompound.name}</ThemedText>
+                  <TouchableOpacity onPress={() => setSelectedCompound(null)} hitSlop={12}>
+                    <ThemedText style={[styles.modalClose, { color: iconColor }]}>Close</ThemedText>
+                  </TouchableOpacity>
                 </View>
-              ) : (
-                <ScrollView
-                  style={styles.compoundsList}
-                  contentContainerStyle={styles.compoundsListContent}
-                  showsVerticalScrollIndicator={true}
-                  nestedScrollEnabled={true}
-                >
-                  {compounds.map((compound) => (
-                    <React.Fragment key={compound.id}>
-                      {renderCompound({ item: compound })}
-                    </React.Fragment>
-                  ))}
+                <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                  {(() => {
+                    const imgSrc = getCompoundStructureImageSource(selectedCompound.database_name, selectedCompound.id);
+                    return imgSrc != null ? (
+                      <Image source={imgSrc} style={styles.modalImage} contentFit="contain" />
+                    ) : (
+                      <View style={[styles.modalImagePlaceholder, { borderColor: iconColor }]} />
+                    );
+                  })()}
+                  <ThemedText style={[styles.modalId, { color: iconColor }]}>{selectedCompound.id}</ThemedText>
+                  {[
+                    compoundProperty('Chemical formula', selectedCompound.chemical_formula),
+                    compoundProperty('Molecular weight', selectedCompound.molecular_weight),
+                    compoundProperty('CAS', selectedCompound.cas),
+                    compoundProperty('Category', selectedCompound.category_name),
+                    compoundProperty('Class', selectedCompound.class_name),
+                    compoundProperty('Synonym', selectedCompound.synonym),
+                    compoundProperty('Absorption solvent', selectedCompound.absorption_solvent),
+                    compoundProperty('Emission solvent', selectedCompound.emission_solvent),
+                    compoundProperty('Absorption λ', selectedCompound.absorption_wavelength),
+                    compoundProperty('Emission λ', selectedCompound.emission_wavelength),
+                    compoundProperty('Quantum yield', selectedCompound.emission_quantum_yield),
+                  ]
+                    .filter((p): p is { label: string; value: string } => p != null)
+                    .map(p => (
+                      <View key={p.label} style={styles.propertyRow}>
+                        <ThemedText style={[styles.propertyLabel, { color: iconColor }]}>{p.label}:</ThemedText>
+                        <ThemedText style={styles.propertyValue}>{p.value}</ThemedText>
+                      </View>
+                    ))}
                 </ScrollView>
-              )}
-            </View>
-          )}
-        </View>
-      )}
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
     </ThemedView>
   );
@@ -224,23 +238,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
-  },
-  databaseButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 4,
-    backgroundColor: '#f0f0f0',
-    marginRight: 8,
-  },
-  databaseButtonSelected: {
-    backgroundColor: '#3b82f6',
-  },
-  databaseButtonText: {
-    fontSize: 12,
-    color: '#333',
-  },
-  databaseButtonTextSelected: {
-    color: '#fff',
   },
   searchInput: {
     borderWidth: 1,
@@ -270,6 +267,11 @@ const styles = StyleSheet.create({
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+  },
+  compoundRowTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   compoundStructureImage: {
     width: 44,
@@ -343,5 +345,73 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#ef4444',
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '85%',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    flex: 1,
+  },
+  modalClose: {
+    fontSize: 16,
+  },
+  modalBody: {
+    padding: 16,
+    maxHeight: 400,
+  },
+  modalImage: {
+    width: '100%',
+    aspectRatio: 1,
+    maxHeight: 220,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+    alignSelf: 'center',
+  },
+  modalImagePlaceholder: {
+    width: '100%',
+    aspectRatio: 1,
+    maxHeight: 220,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignSelf: 'center',
+  },
+  modalId: {
+    fontSize: 14,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  propertyRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+    gap: 8,
+  },
+  propertyLabel: {
+    fontSize: 13,
+    minWidth: 120,
+  },
+  propertyValue: {
+    fontSize: 13,
+    flex: 1,
   },
 });

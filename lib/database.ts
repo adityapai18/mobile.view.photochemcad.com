@@ -70,7 +70,7 @@ export interface DatabaseCategory {
 
 // --- Database Configuration ---
 
-const DB_NAME = 'photochemcad.db';
+const DB_NAME = 'photochemcad_common_compounds.db';
 let db: SQLite.SQLiteDatabase | null = null;
 
 /**
@@ -94,7 +94,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
       await FileSystem.makeDirectoryAsync(sqlDir, { intermediates: true });
       
       // Load the database asset
-      const dbAsset = require('@/assets/data/photochemcad.db');
+      const dbAsset = require('@/assets/data/photochemcad_common_compounds.db');
       const asset = Asset.fromModule(dbAsset);
       
       // Download the asset to get its local URI
@@ -134,7 +134,7 @@ export async function getCompounds(): Promise<Compound[]> {
     SELECT *
     FROM compounds 
     WHERE has_absorption_data = '1' OR has_emission_data = '1'
-    ORDER BY name ASC
+    ORDER BY id ASC
   `);
 }
 
@@ -236,7 +236,7 @@ export async function searchCompounds(query: string): Promise<Compound[]> {
     FROM compounds 
     WHERE (has_absorption_data = '1' OR has_emission_data = '1')
       AND (name LIKE ? OR id LIKE ?)
-    ORDER BY name ASC
+    ORDER BY id ASC
     LIMIT 50
   `, [searchTerm, searchTerm]);
 }
