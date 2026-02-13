@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile.view.photochemcad.com",
-    "slug": "mobile.view.photochemcad.com",
+    "name": "PhotochemCAD App",
+    "slug": "photochemcad-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "mobile.view.photochemcad.com",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +23,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "mobile.view.photochemcad.com"
     },
     "web": {
       "output": "static",
@@ -54,6 +59,12 @@
       "assetExts": [
         "db"
       ]
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "19219b61-6efc-43aa-b07f-645f8c21fa52"
+      }
     }
   }
 }
