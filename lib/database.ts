@@ -139,6 +139,20 @@ export async function getCompounds(): Promise<Compound[]> {
 }
 
 /**
+ * Get compounds with pagination for lazy loading.
+ */
+export async function getCompoundsPaginated(limit: number = 20, offset: number = 0): Promise<Compound[]> {
+  const database = await getDatabase();
+  return await database.getAllAsync<Compound>(`
+    SELECT *
+    FROM compounds 
+    WHERE has_absorption_data = '1' OR has_emission_data = '1'
+    ORDER BY id ASC
+    LIMIT ? OFFSET ?
+  `, [limit, offset]);
+}
+
+/**
  * Get a single compound by its ID.
  */
 export async function getCompoundById(id: string): Promise<Compound | null> {
@@ -239,4 +253,25 @@ export async function searchCompounds(query: string): Promise<Compound[]> {
     ORDER BY id ASC
     LIMIT 50
   `, [searchTerm, searchTerm]);
+}
+
+/**
+ * Global search for compounds with pagination for lazy loading.
+ * Searches across the entire database.
+ */
+export async function searchCompoundsPaginated(
+  query: string,
+  limit: number = 20,
+  offset: number = 0
+): Promise<Compound[]> {
+  const database = await getDatabase();
+  const searchTerm = `%${query}%`;
+  return await database.getAllAsync<Compound>(`
+    SELECT *
+    FROM compounds 
+    WHERE (has_absorption_data = '1' OR has_emission_data = '1')
+      AND (name LIKE ? OR id LIKE ?)
+    ORDER BY id ASC
+    LIMIT ? OFFSET ?
+  `, [searchTerm, searchTerm, limit, offset]);
 }

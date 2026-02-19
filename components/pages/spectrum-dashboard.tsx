@@ -1,15 +1,16 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemeColor } from '../../hooks/use-theme-color';
 import { Compound, getAbsorptionData, getEmissionData } from '../../lib/database';
-import { DistributionParams, SelectedSpectrum } from '../../lib/types';
+import { DistributionParams, SelectedSpectrum, UploadedSpectrum } from '../../lib/types';
 import { BrandFooter } from '../brand/brand-footer';
 import { BrandHeader } from '../brand/brand-header';
 import { CompoundComparisonTable } from '../compound-comparison-table';
 import { DatabaseBrowser } from '../database-browser';
 import { DistributionModal } from '../modals/distribution-modal';
+import { UploadedSpectraModal } from '../modals/uploaded-spectra-modal';
 import { EnergyTransferModal } from '../modals/energy-transfer-modal';
 import { ForsterEnergyTransferModal } from '../modals/forster-energy-transfer-modal';
 import { MultipleComponentAnalysisModal } from '../modals/multiple-component-analysis-modal';
@@ -46,12 +47,32 @@ export function SpectrumDashboard() {
   const [isModulePickerOpen, setIsModulePickerOpen] = useState(false);
   const [activeModuleId, setActiveModuleId] = useState<CalculationModuleId | null>(null);
   const [isDistributionModalOpen, setIsDistributionModalOpen] = useState(false);
+  const [isUploadedSpectraModalOpen, setIsUploadedSpectraModalOpen] = useState(false);
   const [distributions, setDistributions] = useState<DistributionParams[]>([]);
+  const [uploadedSpectra, setUploadedSpectra] = useState<UploadedSpectrum[]>([]);
 
   const activeModule = useMemo(
     () => (activeModuleId ? CALCULATION_MODULES.find(m => m.id === activeModuleId) ?? null : null),
     [activeModuleId]
   );
+
+  // Convert uploaded spectra to SelectedSpectrum format for chart display
+  const allSpectraForChart = useMemo(() => {
+    const uploadedAsSelected: SelectedSpectrum[] = uploadedSpectra.map(uploaded => ({
+      compound: {
+        id: uploaded.id,
+        name: uploaded.name,
+        slug: uploaded.id,
+        database_name: 'Uploaded',
+        category_name: 'Uploaded',
+        has_absorption_data: uploaded.type === 'absorption' ? '1' : '0',
+        has_emission_data: uploaded.type === 'emission' ? '1' : '0',
+      } as Compound,
+      type: uploaded.type,
+      data: uploaded.data,
+    }));
+    return [...selectedSpectra, ...uploadedAsSelected];
+  }, [selectedSpectra, uploadedSpectra]);
 
   const handleSpectrumAdd = async (spectrum: { compound: Compound; type: 'absorption' | 'emission' }) => {
     // Check if already selected
@@ -155,14 +176,15 @@ export function SpectrumDashboard() {
     }
 
     if (item.type === 'selected') {
+      const totalSpectra = selectedSpectra.length + uploadedSpectra.length;
       return (
         <View style={styles.selectedContainer}>
           <ThemedText type="subtitle" style={styles.selectedTitle}>
-            Selected Spectra ({selectedSpectra.length}) 
+            Selected Spectra ({totalSpectra}) 
           </ThemedText>
-          {selectedSpectra.length === 0 ? (
+          {totalSpectra === 0 ? (
             <ThemedText style={styles.emptySelectedText}>
-              No spectra selected. Click Abs or Em buttons to add spectra.
+              No spectra selected. Click Abs or Em buttons to add spectra, or upload your own.
             </ThemedText>
           ) : (
             <View style={styles.selectedList}>
@@ -184,6 +206,24 @@ export function SpectrumDashboard() {
                   </TouchableOpacity>
                 </View>
               ))}
+              {uploadedSpectra.map((item) => (
+                <View key={`${item.id}-${item.type}`} style={[styles.selectedItem, styles.uploadedItem]}>
+                  <View style={styles.selectedItemContent}>
+                    <ThemedText style={styles.selectedCompoundName}>
+                      {item.name}
+                    </ThemedText>
+                    <ThemedText style={styles.selectedType} numberOfLines={1}>
+                      {item.type === 'absorption' ? 'Abs' : 'Em'} (Uploaded)
+                    </ThemedText>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setUploadedSpectra(prev => prev.filter(s => s.id !== item.id))}
+                    style={styles.removeButton}
+                  >
+                    <ThemedText style={styles.removeText}>×</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
           )}
         </View>
@@ -193,7 +233,12 @@ export function SpectrumDashboard() {
     if (item.type === 'modules') {
       return (
         <View style={styles.modulesContainer}>
-          <View style={styles.modulesRow}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.modulesRow}
+            style={styles.modulesScrollView}
+          >
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() => setIsDistributionModalOpen(true)}
@@ -207,13 +252,24 @@ export function SpectrumDashboard() {
 
             <TouchableOpacity
               activeOpacity={0.8}
+              onPress={() => setIsUploadedSpectraModalOpen(true)}
+              style={styles.manageButton}
+            >
+              <Ionicons name="document-outline" size={18} color={textColor} />
+              <ThemedText style={styles.manageButtonText}>
+                Spectra{uploadedSpectra.length > 0 ? ` (${uploadedSpectra.length})` : ''}
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
               onPress={() => setIsModulePickerOpen(true)}
               style={styles.selectModule}
             >
               <ThemedText style={styles.selectModuleText}>Calculation modules</ThemedText>
               <Ionicons name="chevron-down" size={18} color={iconColor} />
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       );
     }
@@ -230,7 +286,7 @@ export function SpectrumDashboard() {
             </View>
           )}
           <SpectrumChart
-            data={selectedSpectra}
+            data={allSpectraForChart}
             isLoading={isLoading}
             distributions={distributions}
           />
@@ -255,7 +311,7 @@ export function SpectrumDashboard() {
         style={{ backgroundColor }}
         scrollEnabled={true}
         removeClippedSubviews={false}
-        extraData={[selectedSpectra.length, distributions.length]}
+        extraData={[selectedSpectra.length, distributions.length, uploadedSpectra.length]}
       />
 
       {/* Module picker (UI only) */}
@@ -294,6 +350,14 @@ export function SpectrumDashboard() {
         onClose={() => setIsDistributionModalOpen(false)}
         distributions={distributions}
         onDistributionsChange={setDistributions}
+      />
+
+      {/* Uploaded Spectra modal */}
+      <UploadedSpectraModal
+        visible={isUploadedSpectraModalOpen}
+        onClose={() => setIsUploadedSpectraModalOpen(false)}
+        uploadedSpectra={uploadedSpectra}
+        onUploadedSpectraChange={setUploadedSpectra}
       />
 
       {/* Energy Transfer modal */}
@@ -376,9 +440,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 16,
   },
+  modulesScrollView: {
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
+  },
   modulesRow: {
     flexDirection: 'row',
     gap: 12,
+    paddingRight: 16,
   },
   manageButton: {
     flexDirection: 'row',
@@ -390,13 +459,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(128, 128, 128, 0.35)',
     backgroundColor: 'rgba(128, 128, 128, 0.10)',
+    flexShrink: 0,
   },
   manageButtonText: {
     fontSize: 15,
     fontWeight: '600',
   },
   selectModule: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -406,6 +475,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(128, 128, 128, 0.35)',
     backgroundColor: 'rgba(128, 128, 128, 0.10)',
+    minWidth: 180,
+    flexShrink: 0,
   },
   selectModuleText: {
     fontSize: 15,
@@ -540,6 +611,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#ef4444',
     fontWeight: 'bold',
+  },
+  uploadedItem: {
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderColor: 'rgba(139, 92, 246, 0.3)',
   },
   chartContainer: {
     position: 'relative',

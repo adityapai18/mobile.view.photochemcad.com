@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useThemeColor } from '../hooks/use-theme-color';
 import { getCompoundStructureImageSource } from '../lib/compound-structure-images.generated';
-import { Compound, getCompounds, searchCompounds } from '../lib/database';
+import { Compound, getCompoundsPaginated, searchCompoundsPaginated } from '../lib/database';
 import { SelectedSpectrum } from '../lib/types';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
@@ -19,29 +19,85 @@ function compoundProperty(label: string, value: string | number | null | undefin
   return { label, value: String(value) };
 }
 
+const PAGE_SIZE = 20;
+
 export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpectra }: DatabaseBrowserProps) {
   const [compounds, setCompounds] = useState<Compound[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [selectedCompound, setSelectedCompound] = useState<Compound | null>(null);
+  const compoundsLengthRef = useRef(0);
 
-  const loadCompounds = async (query: string = '') => {
-    setIsLoading(true);
+  // Update ref when compounds change
+  useEffect(() => {
+    compoundsLengthRef.current = compounds.length;
+  }, [compounds]);
+
+  const loadCompounds = useCallback(async (query: string = '', reset: boolean = true) => {
+    if (reset) {
+      setIsLoading(true);
+      setCompounds([]);
+      setHasMore(true);
+      compoundsLengthRef.current = 0;
+    } else {
+      setIsLoadingMore(true);
+    }
+
     try {
+      const offset = reset ? 0 : compoundsLengthRef.current;
       const results = query.trim()
-        ? await searchCompounds(query)
-        : await getCompounds();
-      setCompounds(results);
+        ? await searchCompoundsPaginated(query, PAGE_SIZE, offset)
+        : await getCompoundsPaginated(PAGE_SIZE, offset);
+
+      if (reset) {
+        // Deduplicate results by id
+        const uniqueResults = Array.from(
+          new Map(results.map(c => [c.id, c])).values()
+        );
+        setCompounds(uniqueResults);
+      } else {
+        // Filter out duplicates when appending
+        setCompounds(prev => {
+          const existingIds = new Set(prev.map(c => c.id));
+          const newCompounds = results.filter(c => !existingIds.has(c.id));
+          const combined = [...prev, ...newCompounds];
+          // Deduplicate the combined array
+          return Array.from(
+            new Map(combined.map(c => [c.id, c])).values()
+          );
+        });
+      }
+
+      // Check if there are more items to load
+      setHasMore(results.length === PAGE_SIZE);
     } catch (error) {
       console.error('Error loading compounds:', error);
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadCompounds(searchQuery);
-  }, [searchQuery]);
+    loadCompounds(searchQuery, true);
+  }, [searchQuery, loadCompounds]);
+
+  const isLoadingMoreRef = useRef(false);
+  const hasMoreRef = useRef(true);
+  
+  useEffect(() => {
+    isLoadingMoreRef.current = isLoadingMore;
+    hasMoreRef.current = hasMore;
+  }, [isLoadingMore, hasMore]);
+
+  const handleLoadMore = useCallback(() => {
+    if (!isLoadingMoreRef.current && hasMoreRef.current && !isLoading) {
+      isLoadingMoreRef.current = true;
+      loadCompounds(searchQuery, false);
+    }
+  }, [isLoading, searchQuery, loadCompounds]);
 
   const isSelected = (compound: Compound, type: 'absorption' | 'emission') => {
     return selectedSpectra.some(
@@ -133,32 +189,64 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
 
       <View style={styles.section}>
         <ThemedText style={[styles.sectionTitle, { color: iconColor }]}>Compounds</ThemedText>
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color="#3b82f6" />
-          </View>
-        ) : (
-          <View style={[styles.compoundsListContainer, { borderColor: iconColor }]}>
-            {compounds.length === 0 ? (
-              <View style={styles.loadingContainer}>
-                <ThemedText style={[styles.emptyText, { color: iconColor }]}>No compounds found</ThemedText>
-              </View>
-            ) : (
-              <ScrollView
-                style={styles.compoundsList}
-                contentContainerStyle={styles.compoundsListContent}
-                showsVerticalScrollIndicator={true}
-                nestedScrollEnabled={true}
-              >
-                {compounds.map((compound) => (
-                  <React.Fragment key={compound.id}>
-                    {renderCompound({ item: compound })}
-                  </React.Fragment>
-                ))}
-              </ScrollView>
-            )}
-          </View>
-        )}
+        <View style={[styles.compoundsListContainer, { borderColor: iconColor }]}>
+          {isLoading && compounds.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#3b82f6" />
+            </View>
+          ) : compounds.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ThemedText style={[styles.emptyText, { color: iconColor }]}>No compounds found</ThemedText>
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.compoundsList}
+              contentContainerStyle={styles.compoundsListContent}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+              scrollEnabled={true}
+              bounces={true}
+              onScroll={(event) => {
+                const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+                // More aggressive threshold for Android - trigger earlier
+                const paddingToBottom = 100;
+                const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+                
+                if (isCloseToBottom && !isLoadingMore && hasMore && !isLoading) {
+                  handleLoadMore();
+                }
+              }}
+              scrollEventThrottle={16}
+              onMomentumScrollEnd={(event) => {
+                // Also check on momentum end for better Android support
+                const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+                const paddingToBottom = 50;
+                const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+                
+                if (isCloseToBottom && !isLoadingMore && hasMore && !isLoading) {
+                  handleLoadMore();
+                }
+              }}
+            >
+              {compounds.map((compound, index) => (
+                <React.Fragment key={`${compound.id}-${compound.database_name || 'default'}-${index}`}>
+                  {renderCompound({ item: compound })}
+                </React.Fragment>
+              ))}
+              {isLoadingMore && (
+                <View style={styles.loadingMoreContainer}>
+                  <ActivityIndicator size="small" color="#3b82f6" />
+                  <ThemedText style={styles.loadingMoreText}>Loading more...</ThemedText>
+                </View>
+              )}
+              {!hasMore && compounds.length > 0 && (
+                <View style={styles.loadingMoreContainer}>
+                  <ThemedText style={styles.endOfListText}>No more compounds</ThemedText>
+                </View>
+              )}
+            </ScrollView>
+          )}
+        </View>
       </View>
 
       <Modal
@@ -254,11 +342,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   compoundsList: {
-    flex: 1,
     height: 250,
   },
   compoundsListContent: {
     paddingBottom: 8,
+  },
+  loadingMoreContainer: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+  loadingMoreText: {
+    marginTop: 8,
+    fontSize: 12,
+    opacity: 0.7,
+  },
+  endOfListText: {
+    fontSize: 12,
+    opacity: 0.5,
+    fontStyle: 'italic',
   },
   compoundItem: {
     flexDirection: 'row',

@@ -33,3 +33,10 @@ export interface DistributionPoint {
   wavelength: number;
   intensity: number;
 }
+
+export interface UploadedSpectrum {
+  id: string;
+  name: string;
+  type: 'absorption' | 'emission';
+  data: SpectrumData[];
+}
