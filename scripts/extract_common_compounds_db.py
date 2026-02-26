@@ -94,12 +94,8 @@ def main() -> None:
             "spectra_databases",
             "common_compound_categories",
             "solar_spectra",
-            "compounds_absorptions_backup",
             "compounds_absorptions",
-            "compound_absorption_normalized_status",
-            "compounds_emissions_backup",
             "compounds_emissions",
-            "compound_emission_normalized_status",
             "compounds",
         ]
         for table in tables_to_copy:
@@ -147,22 +143,11 @@ def main() -> None:
         for table in [
             "compounds_absorptions",
             "compounds_emissions",
-            "compound_absorption_normalized_status",
-            "compound_emission_normalized_status",
         ]:
             conn_dst.execute(
                 f"INSERT INTO {table} SELECT * FROM src.{table} WHERE compound_id IN ({placeholders})",
                 compound_ids,
             )
-
-        conn_dst.execute(
-            f"INSERT INTO compounds_absorptions_backup SELECT * FROM src.compounds_absorptions_backup WHERE compound_id IN ({placeholders})",
-            compound_ids,
-        )
-        conn_dst.execute(
-            f"INSERT INTO compounds_emissions_backup SELECT * FROM src.compounds_emissions_backup WHERE compound_id IN ({placeholders})",
-            compound_ids,
-        )
 
         conn_dst.commit()
         conn_dst.execute("DETACH DATABASE src")
