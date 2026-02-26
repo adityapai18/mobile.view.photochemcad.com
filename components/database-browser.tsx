@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useThemeColor } from '../hooks/use-theme-color';
 import { getCompoundStructureImageSource } from '../lib/compound-structure-images.generated';
-import { Compound, getCompoundsPaginated, searchCompoundsPaginated } from '../lib/database';
+import { Compound, getCompoundsPaginated, getLiteratureReferences, LiteratureReference, searchCompoundsPaginated } from '../lib/database';
 import { SelectedSpectrum } from '../lib/types';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
@@ -29,11 +29,57 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
   const [hasMore, setHasMore] = useState(true);
   const [selectedCompound, setSelectedCompound] = useState<Compound | null>(null);
   const compoundsLengthRef = useRef(0);
+  const [selectedReferences, setSelectedReferences] = useState<LiteratureReference[]>([]);
+  const [isRefsLoading, setIsRefsLoading] = useState(false);
+  const [showingRefs, setShowingRefs] = useState(false);
 
-  // Update ref when compounds change
   useEffect(() => {
     compoundsLengthRef.current = compounds.length;
   }, [compounds]);
+
+  useEffect(() => {
+    const loadRefs = async () => {
+      if (!selectedCompound) {
+        setSelectedReferences([]);
+        setShowingRefs(false);
+        return;
+      }
+      const raw = selectedCompound.general_references;
+      if (!raw) {
+        setSelectedReferences([]);
+        return;
+      }
+      const baseKeys = raw
+        .split(';')
+        .map(k => k.trim())
+        .filter(Boolean);
+      if (baseKeys.length === 0) {
+        setSelectedReferences([]);
+        return;
+      }
+      const allKeyVariants = new Set<string>();
+      for (const key of baseKeys) {
+        allKeyVariants.add(key);
+        if (key.startsWith('(') && key.endsWith(')')) {
+          allKeyVariants.add(key.slice(1, -1));
+        } else {
+          allKeyVariants.add(`(${key})`);
+        }
+      }
+      const keys = Array.from(allKeyVariants);
+      try {
+        setIsRefsLoading(true);
+        const refs = await getLiteratureReferences(keys);
+        setSelectedReferences(refs);
+      } catch (error) {
+        setSelectedReferences([]);
+      } finally {
+        setIsRefsLoading(false);
+      }
+    };
+    loadRefs();
+    setShowingRefs(false);
+  }, [selectedCompound]);
 
   const loadCompounds = useCallback(async (query: string = '', reset: boolean = true) => {
     if (reset) {
@@ -44,33 +90,24 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
     } else {
       setIsLoadingMore(true);
     }
-
     try {
       const offset = reset ? 0 : compoundsLengthRef.current;
       const results = query.trim()
         ? await searchCompoundsPaginated(query, PAGE_SIZE, offset)
         : await getCompoundsPaginated(PAGE_SIZE, offset);
-
       if (reset) {
-        // Deduplicate results by id
         const uniqueResults = Array.from(
           new Map(results.map(c => [c.id, c])).values()
         );
         setCompounds(uniqueResults);
       } else {
-        // Filter out duplicates when appending
         setCompounds(prev => {
           const existingIds = new Set(prev.map(c => c.id));
           const newCompounds = results.filter(c => !existingIds.has(c.id));
           const combined = [...prev, ...newCompounds];
-          // Deduplicate the combined array
-          return Array.from(
-            new Map(combined.map(c => [c.id, c])).values()
-          );
+          return Array.from(new Map(combined.map(c => [c.id, c])).values());
         });
       }
-
-      // Check if there are more items to load
       setHasMore(results.length === PAGE_SIZE);
     } catch (error) {
       console.error('Error loading compounds:', error);
@@ -83,21 +120,6 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
   useEffect(() => {
     loadCompounds(searchQuery, true);
   }, [searchQuery, loadCompounds]);
-
-  const isLoadingMoreRef = useRef(false);
-  const hasMoreRef = useRef(true);
-  
-  useEffect(() => {
-    isLoadingMoreRef.current = isLoadingMore;
-    hasMoreRef.current = hasMore;
-  }, [isLoadingMore, hasMore]);
-
-  const handleLoadMore = useCallback(() => {
-    if (!isLoadingMoreRef.current && hasMoreRef.current && !isLoading) {
-      isLoadingMoreRef.current = true;
-      loadCompounds(searchQuery, false);
-    }
-  }, [isLoading, searchQuery, loadCompounds]);
 
   const isSelected = (compound: Compound, type: 'absorption' | 'emission') => {
     return selectedSpectra.some(
@@ -173,6 +195,15 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
   const textColor = useThemeColor({}, 'text');
   const iconColor = useThemeColor({}, 'icon');
 
+  const buildPropertyRows = (compound: Compound): { label: string; value: string }[] => {
+    return [
+      compoundProperty('Chemical formula', compound.chemical_formula),
+      compoundProperty('CAS', compound.cas),
+      compoundProperty('All CAS', compound.cas_all),
+      compoundProperty('IUPAC name', compound.iupac_name)
+    ].filter((p): p is { label: string; value: string } => p != null);
+  };
+
   return (
     <ThemedView style={[styles.container, ]}>
       <ThemedText type="title" style={styles.title}>Database Browser</ThemedText>
@@ -208,23 +239,14 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
               bounces={true}
               onScroll={(event) => {
                 const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-                // More aggressive threshold for Android - trigger earlier
                 const paddingToBottom = 100;
-                const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
-                
+                const isCloseToBottom =
+                  layoutMeasurement.height + contentOffset.y >=
+                  contentSize.height - paddingToBottom;
+
                 if (isCloseToBottom && !isLoadingMore && hasMore && !isLoading) {
-                  handleLoadMore();
-                }
-              }}
-              scrollEventThrottle={16}
-              onMomentumScrollEnd={(event) => {
-                // Also check on momentum end for better Android support
-                const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-                const paddingToBottom = 50;
-                const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
-                
-                if (isCloseToBottom && !isLoadingMore && hasMore && !isLoading) {
-                  handleLoadMore();
+                  // Load the next page of compounds when scrolling near the bottom
+                  loadCompounds(searchQuery, false);
                 }
               }}
             >
@@ -255,53 +277,97 @@ export function DatabaseBrowser({ onSpectrumAdd, onSpectrumRemove, selectedSpect
         animationType="fade"
         onRequestClose={() => setSelectedCompound(null)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setSelectedCompound(null)}>
-          <Pressable style={[styles.modalContent, { backgroundColor }]} onPress={e => e.stopPropagation()}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor }]}>
             {selectedCompound && (
               <>
                 <View style={styles.modalHeader}>
-                  <ThemedText type="title" style={styles.modalTitle}>{selectedCompound.name}</ThemedText>
+                  <ThemedText type="title" style={styles.modalTitle}>
+                    {selectedCompound.name}
+                  </ThemedText>
+                  {!isRefsLoading && selectedReferences.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setShowingRefs(prev => !prev)}
+                      style={styles.refsButton}
+                      hitSlop={8}
+                    >
+                      <ThemedText style={[styles.refsButtonText, { color: iconColor }]}>
+                        {showingRefs ? 'Details' : 'References'}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity onPress={() => setSelectedCompound(null)} hitSlop={12}>
                     <ThemedText style={[styles.modalClose, { color: iconColor }]}>Close</ThemedText>
                   </TouchableOpacity>
                 </View>
-                <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-                  {(() => {
-                    const imgSrc = getCompoundStructureImageSource(selectedCompound.database_name, selectedCompound.id);
-                    return imgSrc != null ? (
-                      <Image source={imgSrc} style={styles.modalImage} contentFit="contain" />
-                    ) : (
-                      <View style={[styles.modalImagePlaceholder, { borderColor: iconColor }]} />
-                    );
-                  })()}
-                  <ThemedText style={[styles.modalId, { color: iconColor }]}>{selectedCompound.id}</ThemedText>
-                  {[
-                    compoundProperty('Chemical formula', selectedCompound.chemical_formula),
-                    compoundProperty('Molecular weight', selectedCompound.molecular_weight),
-                    compoundProperty('CAS', selectedCompound.cas),
-                    compoundProperty('Category', selectedCompound.category_name),
-                    compoundProperty('Class', selectedCompound.class_name),
-                    compoundProperty('Synonym', selectedCompound.synonym),
-                    compoundProperty('Absorption solvent', selectedCompound.absorption_solvent),
-                    compoundProperty('Emission solvent', selectedCompound.emission_solvent),
-                    compoundProperty('Absorption λ', selectedCompound.absorption_wavelength),
-                    compoundProperty('Emission λ', selectedCompound.emission_wavelength),
-                    compoundProperty('Quantum yield', selectedCompound.emission_quantum_yield),
-                  ]
-                    .filter((p): p is { label: string; value: string } => p != null)
-                    .map(p => (
-                      <View key={p.label} style={styles.propertyRow}>
-                        <ThemedText style={[styles.propertyLabel, { color: iconColor }]}>{p.label}:</ThemedText>
-                        <ThemedText style={styles.propertyValue}>{p.value}</ThemedText>
-                      </View>
-                    ))}
+
+                <ScrollView
+                  style={styles.modalBody}
+                  contentContainerStyle={styles.modalBodyContent}
+                  showsVerticalScrollIndicator
+                >
+                  {showingRefs ? (
+                    <View style={styles.referencesSection}>
+                      <ThemedText style={[styles.sectionTitle, { color: iconColor }]}>
+                        Literature references
+                      </ThemedText>
+                      {isRefsLoading ? (
+                        <View style={styles.referencesLoading}>
+                          <ActivityIndicator size="small" color="#3b82f6" />
+                          <ThemedText style={styles.referencesLoadingText}>
+                            Loading references…
+                          </ThemedText>
+                        </View>
+                      ) : selectedReferences.length === 0 ? (
+                        <ThemedText style={styles.referencesEmpty}>
+                          No references listed for this compound.
+                        </ThemedText>
+                      ) : (
+                        <View style={styles.referencesList}>
+                          {selectedReferences.map(ref => (
+                            <View key={ref.author_year} style={styles.referenceItem}>
+                              <ThemedText style={styles.referenceKey}>{ref.author_year}</ThemedText>
+                              <ThemedText style={styles.referenceText}>{ref.full_citation}</ThemedText>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  ) : (
+                    <>
+                      {(() => {
+                        const imgSrc = getCompoundStructureImageSource(
+                          selectedCompound.database_name,
+                          selectedCompound.id
+                        );
+                        return imgSrc != null ? (
+                          <Image source={imgSrc} style={styles.modalImage} contentFit="contain" />
+                        ) : (
+                          <View
+                            style={[styles.modalImagePlaceholder, { borderColor: iconColor }]}
+                          />
+                        );
+                      })()}
+                      <ThemedText style={[styles.modalId, { color: iconColor }]}>
+                        {selectedCompound.id}
+                      </ThemedText>
+
+                      {buildPropertyRows(selectedCompound).map(item => (
+                        <View key={item.label} style={styles.propertyRow}>
+                          <ThemedText style={[styles.propertyLabel, { color: iconColor }]}>
+                            {item.label}:
+                          </ThemedText>
+                          <ThemedText style={styles.propertyValue}>{item.value}</ThemedText>
+                        </View>
+                      ))}
+                    </>
+                  )}
                 </ScrollView>
               </>
             )}
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
-
     </ThemedView>
   );
 }
@@ -454,12 +520,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
   },
   modalContent: {
-    width: '100%',
-    maxWidth: 400,
-    maxHeight: '85%',
+    width: '90%',
+    height: '55%',      // fixed card height so ScrollView has space
     borderRadius: 12,
     overflow: 'hidden',
   },
@@ -480,8 +544,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   modalBody: {
-    padding: 16,
-    maxHeight: 400,
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  modalBodyContent: {
+    paddingBottom: 16,
   },
   modalImage: {
     width: '100%',
@@ -516,5 +584,52 @@ const styles = StyleSheet.create({
   propertyValue: {
     fontSize: 13,
     flex: 1,
+  },
+  referencesSection: {
+    marginTop: 16,
+  },
+  referencesLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  referencesLoadingText: {
+    fontSize: 13,
+    opacity: 0.7,
+  },
+  referencesEmpty: {
+    fontSize: 13,
+    opacity: 0.6,
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  referencesList: {
+    marginTop: 4,
+    gap: 8,
+  },
+  referenceItem: {
+    marginBottom: 6,
+  },
+  referenceKey: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  referenceText: {
+    fontSize: 13,
+    opacity: 0.85,
+  },
+  refsButton: {
+    marginRight: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  refsButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

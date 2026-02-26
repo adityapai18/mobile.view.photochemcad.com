@@ -97,6 +97,8 @@ def main() -> None:
             "compounds_absorptions",
             "compounds_emissions",
             "compounds",
+            # copy full literature_references table so we can resolve general_references keys
+            "literature_references",
         ]
         for table in tables_to_copy:
             copy_table_schema(conn_src, conn_dst, table)
@@ -133,10 +135,67 @@ def main() -> None:
         # solar_spectra: copy all (global reference data)
         conn_dst.execute("INSERT OR IGNORE INTO solar_spectra SELECT * FROM src.solar_spectra")
 
-        # compounds: only Common Compounds
+        # compounds: start from the original Common Compounds rows only
+        # (these contain the photophysical data we need for the app).
         conn_dst.execute(
-            f"INSERT INTO compounds SELECT * FROM src.compounds WHERE id IN ({placeholders})",
-            compound_ids,
+            f"""
+            INSERT INTO compounds
+            SELECT *
+            FROM src.compounds
+            WHERE database_name = ?
+              AND id IN ({placeholders})
+            """,
+            (TARGET_DATABASE_NAME, *compound_ids),
+        )
+
+        # Now "fill in the holes" for metadata fields using the enriched PCAD rows,
+        # without creating duplicate IDs. Only update NULL/empty fields on the
+        # existing Common Compounds rows.
+        # NOTE: this assumes PCAD rows share the same schema and use the same IDs.
+        conn_dst.execute(
+            """
+            UPDATE compounds
+            SET
+              smiles = COALESCE(NULLIF(smiles, ''), (
+                SELECT p.smiles FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              )),
+              iupac_name = COALESCE(NULLIF(iupac_name, ''), (
+                SELECT p.iupac_name FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              )),
+              pubchem_cid = COALESCE(NULLIF(pubchem_cid, ''), (
+                SELECT p.pubchem_cid FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              )),
+              pubchem_link = COALESCE(NULLIF(pubchem_link, ''), (
+                SELECT p.pubchem_link FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              )),
+              wikipedia_link = COALESCE(NULLIF(wikipedia_link, ''), (
+                SELECT p.wikipedia_link FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              )),
+              wikidata_link = COALESCE(NULLIF(wikidata_link, ''), (
+                SELECT p.wikidata_link FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              )),
+              pubchem_name = COALESCE(NULLIF(pubchem_name, ''), (
+                SELECT p.pubchem_name FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              )),
+              cas_all = COALESCE(NULLIF(cas_all, ''), (
+                SELECT p.cas_all FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              )),
+              general_references = COALESCE(NULLIF(general_references, ''), (
+                SELECT p.general_references FROM src.compounds p
+                WHERE p.database_name = 'PCAD' AND p.id = compounds.id
+              ))
+            WHERE id IN (
+              SELECT DISTINCT id FROM src.compounds WHERE database_name = 'PCAD'
+            )
+            """
         )
 
         # Linked tables: only rows for our compound IDs
@@ -148,6 +207,11 @@ def main() -> None:
                 f"INSERT INTO {table} SELECT * FROM src.{table} WHERE compound_id IN ({placeholders})",
                 compound_ids,
             )
+
+        # literature_references: copy all rows (small global lookup table)
+        conn_dst.execute(
+            "INSERT OR IGNORE INTO literature_references SELECT * FROM src.literature_references"
+        )
 
         conn_dst.commit()
         conn_dst.execute("DETACH DATABASE src")

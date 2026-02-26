@@ -61,6 +61,25 @@ export interface Compound {
   has_structure_labeled_tif?: string | null;
   has_structure_labeled_png?: string | null;
   has_structure_cdx?: string | null;
+  // New enriched metadata fields from updated schema
+  smiles?: string | null;
+  iupac_name?: string | null;
+  pubchem_cid?: string | null;
+  pubchem_link?: string | null;
+  wikipedia_link?: string | null;
+  wikidata_link?: string | null;
+  pubchem_name?: string | null;
+  cas_all?: string | null;
+  /**
+   * Semicolon-separated list of reference keys (author_year)
+   * that can be looked up in the literature_references table.
+   */
+  general_references?: string | null;
+}
+
+export interface LiteratureReference {
+  author_year: string;
+  full_citation: string;
 }
 
 export interface DatabaseCategory {
@@ -188,6 +207,40 @@ export async function getEmissionData(compoundId: string): Promise<EmissionData[
     WHERE compound_id = ?
     ORDER BY wavelength ASC
   `, [compoundId]);
+}
+
+/**
+ * Look up literature references by their author_year keys.
+ */
+export async function getLiteratureReferences(keys: string[]): Promise<LiteratureReference[]> {
+  if (!keys.length) return [];
+  const database = await getDatabase();
+  const placeholders = keys.map(() => '?').join(', ');
+  return await database.getAllAsync<LiteratureReference>(`
+    SELECT author_year, full_citation
+    FROM literature_references
+    WHERE author_year IN (${placeholders})
+    ORDER BY author_year ASC
+  `, keys);
+}
+
+/**
+ * Get general_references string for a compound, preferring non-empty rows if duplicates exist.
+ */
+export async function getCompoundGeneralReferences(compoundId: string): Promise<string | null> {
+  const database = await getDatabase();
+  // Prefer non-empty general_references if there are duplicates
+  const rows = await database.getAllAsync<{ general_references: string | null }>(`
+    SELECT general_references
+    FROM compounds
+    WHERE id = ?
+    ORDER BY 
+      (general_references IS NULL OR general_references = '') ASC
+    LIMIT 1
+  `, [compoundId]);
+  if (!rows.length) return null;
+  const value = rows[0].general_references;
+  return value && value.trim() !== '' ? value : null;
 }
 
 /**
