@@ -189,7 +189,10 @@ export async function getCompoundById(id: string): Promise<Compound | null> {
 export async function getAbsorptionData(compoundId: string): Promise<AbsorptionData[]> {
   const database = await getDatabase();
   return await database.getAllAsync<AbsorptionData>(`
-    SELECT compound_id, wavelength, coefficient
+    SELECT 
+      compound_id,
+      CAST(wavelength AS REAL)   AS wavelength,
+      CAST(coefficient AS REAL)  AS coefficient
     FROM compounds_absorptions
     WHERE compound_id = ?
     ORDER BY wavelength ASC
@@ -202,7 +205,10 @@ export async function getAbsorptionData(compoundId: string): Promise<AbsorptionD
 export async function getEmissionData(compoundId: string): Promise<EmissionData[]> {
   const database = await getDatabase();
   return await database.getAllAsync<EmissionData>(`
-    SELECT compound_id, wavelength, normalized
+    SELECT 
+      compound_id,
+      CAST(wavelength AS REAL)   AS wavelength,
+      CAST(normalized AS REAL)   AS normalized
     FROM compounds_emissions
     WHERE compound_id = ?
     ORDER BY wavelength ASC
