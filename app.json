@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "mobile.view.photochemcad.com",
+      "bundleIdentifier": "photochemcad.com.mobile",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

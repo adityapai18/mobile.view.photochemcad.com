@@ -1,5 +1,5 @@
 {
-  "name": "mobile.view.photochemcad.com",
+  "name": "photochemcad.com.mobile",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
