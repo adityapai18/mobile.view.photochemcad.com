@@ -69,6 +69,14 @@ export function OscillatorStrengthCalculatorModal({
     }
   }, [visible]);
 
+  // Compute min/max wavelength from spectrum data for full spectral range
+  const getSpectralRange = (data: SelectedSpectrum['data']) => {
+    if (!data?.length) return null;
+    const wavelengths = data.map(p => Number(p.wavelength)).filter(n => Number.isFinite(n));
+    if (wavelengths.length === 0) return null;
+    return { min: Math.min(...wavelengths), max: Math.max(...wavelengths) };
+  };
+
   // Auto-select and auto-fill when only one absorption spectrum
   useEffect(() => {
     if (visible && absorptionSpectra.length === 1) {
@@ -77,15 +85,19 @@ export function OscillatorStrengthCalculatorModal({
       const c = s.compound as { absorption_wavelength?: string; absorption_epsilon?: string };
       const w = parseFloat(c?.absorption_wavelength ?? '');
       const e = parseFloat(c?.absorption_epsilon ?? '');
-      if (!isNaN(w) && !isNaN(e) && w > 0 && e > 0) {
-        setParams(prev => ({
-          ...prev,
-          wavelengthForEpsilon: w,
-          epsilon: e,
-          lowWavelength: Math.max(200, w - 50),
-          highWavelength: Math.min(1000, w + 50),
-        }));
-      }
+      const range = getSpectralRange(s.data);
+      setParams(prev => {
+        const next = { ...prev };
+        if (range) {
+          next.lowWavelength = range.min;
+          next.highWavelength = range.max;
+        }
+        if (!isNaN(w) && !isNaN(e) && w > 0 && e > 0) {
+          next.wavelengthForEpsilon = w;
+          next.epsilon = e;
+        }
+        return next;
+      });
     }
   }, [visible, absorptionSpectra]);
 
@@ -96,15 +108,19 @@ export function OscillatorStrengthCalculatorModal({
       const c = s.compound as { absorption_wavelength?: string; absorption_epsilon?: string };
       const w = parseFloat(c?.absorption_wavelength ?? '');
       const e = parseFloat(c?.absorption_epsilon ?? '');
-      if (!isNaN(w) && !isNaN(e) && w > 0 && e > 0) {
-        setParams(prev => ({
-          ...prev,
-          wavelengthForEpsilon: w,
-          epsilon: e,
-          lowWavelength: Math.max(200, w - 50),
-          highWavelength: Math.min(1000, w + 50),
-        }));
-      }
+      const range = getSpectralRange(s.data);
+      setParams(prev => {
+        const next = { ...prev };
+        if (range) {
+          next.lowWavelength = range.min;
+          next.highWavelength = range.max;
+        }
+        if (!isNaN(w) && !isNaN(e) && w > 0 && e > 0) {
+          next.wavelengthForEpsilon = w;
+          next.epsilon = e;
+        }
+        return next;
+      });
     }
   };
 
@@ -152,7 +168,7 @@ export function OscillatorStrengthCalculatorModal({
                 </ThemedText>
               ) : absorptionSpectra.length === 1 ? (
                 <View style={[styles.selectedBanner, { borderColor: 'rgba(34,197,94,0.4)' }]}>
-                  <ThemedText style={styles.selectedBannerText}>
+                  <ThemedText style={styles.selectedBannerText} numberOfLines={2} ellipsizeMode="tail">
                     {absorptionSpectra[0].compound.name}
                     {absorptionSpectra[0].compound.database_name
                       ? ` (${absorptionSpectra[0].compound.database_name})`
@@ -353,6 +369,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
+    minWidth: 0,
   },
   header: {
     flexDirection: 'row',
@@ -364,11 +381,11 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 16, fontWeight: '700' },
   desc: { fontSize: 13, opacity: 0.8, marginBottom: 12 },
-  body: { paddingHorizontal: 16, paddingTop: 12 },
+  body: { paddingHorizontal: 16, paddingTop: 12, minWidth: 0 },
   section: { marginTop: 16 },
   sectionTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   muted: { fontSize: 13, opacity: 0.7 },
-  optionList: { flexDirection: 'column', gap: 8 },
+  optionList: { flexDirection: 'column', gap: 8, minWidth: 0 },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -377,14 +394,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
+    minWidth: 0,
+    overflow: 'hidden',
   },
-  optionLabel: { fontSize: 14, flex: 1 },
+  optionLabel: { fontSize: 14, flex: 1, minWidth: 0 },
   selectedBanner: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
     borderWidth: 1,
     backgroundColor: 'rgba(34,197,94,0.08)',
+    minWidth: 0,
   },
   selectedBannerText: { fontSize: 13, fontWeight: '600' },
   paramRow: { marginBottom: 10 },

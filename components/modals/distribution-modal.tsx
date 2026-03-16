@@ -116,7 +116,7 @@ export function DistributionModal({
         >
           <View style={[styles.header, { borderBottomColor: borderColor }]}>
             <ThemedText type="subtitle" style={styles.title}>
-              Distribution comparison settings
+              Create spectra
             </ThemedText>
             <Pressable onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={20} color={textColor} />
@@ -354,6 +354,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
+    minWidth: 0,
   },
   header: {
     flexDirection: 'row',
@@ -364,11 +365,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   title: { fontSize: 16, fontWeight: '700' },
-  body: { paddingHorizontal: 16, paddingTop: 12 },
+  body: { paddingHorizontal: 16, paddingTop: 12, minWidth: 0 },
   section: { marginTop: 16 },
   sectionTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   muted: { fontSize: 13, opacity: 0.7 },
-  list: { flexDirection: 'column', gap: 8 },
+  list: { flexDirection: 'column', gap: 8, minWidth: 0 },
   listItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -377,8 +378,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
+    minWidth: 0,
+    overflow: 'hidden',
   },
-  listItemLabel: { fontSize: 14, flex: 1, textTransform: 'capitalize' },
+  listItemLabel: { fontSize: 14, flex: 1, textTransform: 'capitalize', minWidth: 0 },
   listItemActions: { flexDirection: 'row', gap: 8 },
   smBtn: {
     paddingHorizontal: 10,

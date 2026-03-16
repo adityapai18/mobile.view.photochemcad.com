@@ -1,5 +1,5 @@
 import { Circle, Group, Line as SkiaLine, Text as SkiaText, useFont } from '@shopify/react-native-skia';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CartesianAxis, CartesianChart, Line, useChartPressState, type PointsArray } from 'victory-native';
 import Mono from '../assets/fonts/Mono.ttf';
@@ -69,7 +69,7 @@ function interpSpectrum(points: { w: number; v: number }[], wavelength: number):
   return M.v + t * (N.v - M.v);
 }
 
-/** Draws a dashed series using Skia Line segments (avoids Path+DashPathEffect so compound lines stay solid). */
+/** Draws a dashed series using Skia Line segments. */
 function DistributionLine({ points, color }: { points: PointsArray; color: string }) {
   const segments: React.ReactNode[] = [];
   for (let i = 0; i + 1 < points.length; i += 2) {
@@ -89,8 +89,40 @@ function DistributionLine({ points, color }: { points: PointsArray; color: strin
   return <>{segments}</>;
 }
 
+/** Dashed line for emission (same segment approach as DistributionLine). */
+function DashedSpectrumLine({ points, color }: { points: PointsArray; color: string }) {
+  const segments: React.ReactNode[] = [];
+  for (let i = 0; i + 1 < points.length; i += 2) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (!a || !b || typeof a.y !== 'number' || typeof b.y !== 'number') continue;
+    segments.push(
+      <SkiaLine
+        key={i}
+        p1={{ x: a.x, y: a.y }}
+        p2={{ x: b.x, y: b.y }}
+        color={color}
+        strokeWidth={2}
+      />
+    );
+  }
+  return <>{segments}</>;
+}
+
+const STEP_NM = 50; // X-axis round ticks every 50 nm
+
 export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumChartProps) {
   const [isNormalized, setIsNormalized] = useState(false);
+  const hasSetDefaultNorm = useRef(false);
+
+  // Default normalization on when there are any absorption spectra
+  useEffect(() => {
+    if (hasSetDefaultNorm.current) return;
+    if (data.some((d) => d.type === 'absorption')) {
+      setIsNormalized(true);
+      hasSetDefaultNorm.current = true;
+    }
+  }, [data]);
 
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -213,6 +245,20 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
     [data, distributions]
   );
 
+  // Same color per compound (Abs solid, Em dashed)
+  const compoundOrder = useMemo(() => {
+    const seen = new Map<string, number>();
+    const order: string[] = [];
+    data.forEach(({ compound }) => {
+      if (!seen.has(compound.id)) {
+        seen.set(compound.id, order.length);
+        order.push(compound.id);
+      }
+    });
+    return order;
+  }, [data]);
+  const compoundColor = (compoundId: string) => COLORS[compoundOrder.indexOf(compoundId) % COLORS.length];
+
   // ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS
   // Compute validData and domain BEFORE conditional returns
   const validData = useMemo(() => {
@@ -236,6 +282,9 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
 
     let xMin = Math.min(...allXValues);
     let xMax = Math.max(...allXValues);
+    // Round to STEP_NM for clean axis ticks (e.g. 200, 250, 300)
+    xMin = Math.floor(xMin / STEP_NM) * STEP_NM;
+    xMax = Math.ceil(xMax / STEP_NM) * STEP_NM;
     let yMin = Math.min(...allYValues);
     let yMax = Math.max(...allYValues);
 
@@ -243,17 +292,15 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
       return undefined;
     }
 
-    // Avoid zero-size domains (can break ticks/lines)
     if (xMin === xMax) {
-      xMin -= 1;
-      xMax += 1;
+      xMin -= STEP_NM;
+      xMax += STEP_NM;
     }
     if (yMin === yMax) {
       yMin -= 1;
       yMax += 1;
     }
 
-    // Optional padding so lines aren't glued to edges
     const yPad = (yMax - yMin) * 0.04;
     return {
       x: [xMin, xMax] as [number, number],
@@ -353,12 +400,17 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
                   lineWidth={1.5}
                 />
 
-                {data.map(({ compound, type }, index) => {
+                {data.map(({ compound, type }) => {
                   const yKey = `${compound.id}-${type}`;
-                  const color = COLORS[index % COLORS.length];
+                  const color = compoundColor(compound.id);
                   const linePoints = points[yKey] || [];
                   if (linePoints.length === 0) return null;
 
+                  if (type === 'emission') {
+                    return (
+                      <DashedSpectrumLine key={yKey} points={linePoints} color={color} />
+                    );
+                  }
                   return (
                     <Line
                       key={yKey}
@@ -440,22 +492,24 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
                             y={chartBounds.top + 33 + index * 13}
                             text={`${spectrum.compound.name.substring(0, 12)}: ${Number(yValue).toFixed(3)}`}
                             font={tooltipFont}
-                            color={COLORS[index % COLORS.length]}
+                            color={compoundColor(spectrum.compound.id)}
                           />
                         );
                       })}
                     </Group>
                     {/* Circles at intersection points */}
-                    {yKeys.map((key, index) => {
+                    {yKeys.map((key) => {
                       const yPos = chartPressState.y[key]?.position;
                       if (!yPos) return null;
+                      const spectrum = data.find((d) => `${d.compound.id}-${d.type}` === key);
+                      const color = spectrum ? compoundColor(spectrum.compound.id) : iconColor;
                       return (
                         <Circle
                           key={key}
                           cx={chartPressState.x.position.value}
                           cy={yPos.value}
                           r={4}
-                          color={COLORS[index % COLORS.length]}
+                          color={color}
                         />
                       );
                     })}
@@ -473,13 +527,19 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
         style={[styles.legendContainer, { borderTopColor: iconColor }]}
       >
         <View style={styles.legend}>
-          {data.map(({ compound, type }, index) => {
-            const color = COLORS[index % COLORS.length];
+          {data.map(({ compound, type }) => {
+            const color = compoundColor(compound.id);
+            const isDashed = type === 'emission';
             return (
               <View key={`legend-${compound.id}-${type}`} style={styles.legendItem}>
-                <View style={[styles.legendLine, { backgroundColor: color }]} />
+                <View
+                  style={[
+                    styles.legendLine,
+                    { backgroundColor: isDashed ? 'transparent' : color, borderBottomWidth: isDashed ? 2 : 0, borderBottomColor: color, borderStyle: isDashed ? 'dashed' : undefined },
+                  ]}
+                />
                 <Text style={[styles.legendText, { color: textColor }]}>
-                  {compound.name} ({type})
+                  {compound.name} ({type === 'absorption' ? 'Abs' : 'Em'})
                 </Text>
               </View>
             );

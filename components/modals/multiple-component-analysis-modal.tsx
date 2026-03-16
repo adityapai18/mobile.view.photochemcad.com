@@ -279,8 +279,8 @@ export function MultipleComponentAnalysisModal({
                         const isComposite = i === 0;
                         return (
                           <View key={comp.compound.id} style={[styles.tableRow, { borderColor }]}>
-                            <View style={styles.tableCell}>
-                              <ThemedText style={styles.compoundName} numberOfLines={1}>
+                            <View style={[styles.tableCell, styles.tableCellName]}>
+                              <ThemedText style={styles.compoundName} numberOfLines={1} ellipsizeMode="tail">
                                 {comp.compound.name}
                               </ThemedText>
                             </View>
@@ -385,6 +385,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
+    minWidth: 0,
   },
   header: {
     flexDirection: 'row',
@@ -399,6 +400,7 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     minHeight: 0,
+    minWidth: 0,
     paddingHorizontal: 16,
     paddingTop: 12,
   },
@@ -466,15 +468,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   secondaryButtonText: { fontSize: 14, fontWeight: '500' },
-  table: { borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
+  table: { borderWidth: 1, borderRadius: 8, overflow: 'hidden', minWidth: 0 },
   tableRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     padding: 10,
     borderBottomWidth: 1,
     gap: 8,
+    minWidth: 0,
   },
   tableCell: { minWidth: 80 },
+  tableCellName: { minWidth: 0, flex: 1, maxWidth: '100%' },
   tableLabel: { fontSize: 11, opacity: 0.8, marginBottom: 2 },
   compoundName: { fontSize: 13, fontWeight: '500' },
   inputSmall: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, fontSize: 13 },

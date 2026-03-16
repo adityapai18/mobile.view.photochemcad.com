@@ -134,7 +134,7 @@ export function UploadedSpectraModal({
         const type = (typeInput === 'emission' ? 'emission' : 'absorption') as 'absorption' | 'emission';
         
         if (name) {
-          addSpectrum(name, type, parsedData);
+          addSpectrum(name, type, parsedData, filename);
         }
       } else {
         // For mobile, add with default name and let user edit
@@ -143,7 +143,7 @@ export function UploadedSpectraModal({
         const inferredType = (lowerFilename.includes('emission') || lowerFilename.includes('em'))
           ? 'emission'
           : 'absorption';
-        addSpectrum(defaultName, inferredType, parsedData);
+        addSpectrum(defaultName, inferredType, parsedData, filename);
       }
     } catch (error) {
       console.error('Error parsing file:', error);
@@ -159,7 +159,8 @@ export function UploadedSpectraModal({
   const addSpectrum = (
     name: string,
     type: 'absorption' | 'emission',
-    parsedData: Array<{ wavelength: number; value: number }>
+    parsedData: Array<{ wavelength: number; value: number }>,
+    fileName?: string
   ) => {
     const id = `uploaded-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     const spectrumData = convertToSpectrumData(parsedData, id, type);
@@ -169,6 +170,7 @@ export function UploadedSpectraModal({
       name,
       type,
       data: spectrumData,
+      fileName,
     };
 
     onUploadedSpectraChange([...uploadedSpectra, newSpectrum]);
@@ -214,7 +216,7 @@ export function UploadedSpectraModal({
         >
           <View style={[styles.header, { borderBottomColor: borderColor }]}>
             <ThemedText type="subtitle" style={styles.title}>
-              Uploaded Spectra
+              Upload spectrum
             </ThemedText>
             <Pressable onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={20} color={textColor} />
@@ -314,11 +316,8 @@ export function UploadedSpectraModal({
                       ) : (
                         <>
                           <View style={styles.listItemContent}>
-                            <ThemedText style={styles.listItemLabel} numberOfLines={1}>
-                              {spectrum.name}
-                            </ThemedText>
-                            <ThemedText style={styles.listItemType}>
-                              {spectrum.type === 'absorption' ? 'Absorption' : 'Emission'} ({spectrum.data.length} points)
+                            <ThemedText style={styles.listItemLabel} numberOfLines={1} ellipsizeMode="tail">
+                              {spectrum.fileName ?? spectrum.name} • {spectrum.data.length} data points
                             </ThemedText>
                           </View>
                           <View style={styles.listItemActions}>
@@ -368,6 +367,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
+    minWidth: 0,
   },
   header: {
     flexDirection: 'row',
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   title: { fontSize: 16, fontWeight: '700' },
-  body: { paddingHorizontal: 16, paddingTop: 12 },
+  body: { paddingHorizontal: 16, paddingTop: 12, minWidth: 0 },
   section: { marginTop: 16 },
   sectionTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   muted: { fontSize: 13, opacity: 0.7 },
@@ -395,18 +395,20 @@ const styles = StyleSheet.create({
   },
   uploadButtonText: { fontSize: 14, fontWeight: '600' },
   hint: { fontSize: 12, opacity: 0.7, textAlign: 'center' },
-  list: { flexDirection: 'column', gap: 8 },
+  list: { flexDirection: 'column', gap: 8, minWidth: 0 },
   listItem: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
+    minWidth: 0,
+    overflow: 'hidden',
   },
   listItemContent: {
     flex: 1,
+    minWidth: 0,
   },
-  listItemLabel: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
-  listItemType: { fontSize: 12, opacity: 0.7 },
+  listItemLabel: { fontSize: 14, fontWeight: '600', minWidth: 0 },
   listItemActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
   smBtn: {
     paddingHorizontal: 10,

@@ -330,7 +330,7 @@ export function EnergyTransferModal({
                   <ThemedText style={styles.sectionTitle}>Components</ThemedText>
                   {components.map((c, index) => (
                     <View key={c.id} style={styles.componentCard}>
-                      <ThemedText style={styles.componentName}>
+                      <ThemedText style={styles.componentName} numberOfLines={1} ellipsizeMode="tail">
                         {c.name}
                       </ThemedText>
                       <View style={styles.componentRow}>
@@ -507,6 +507,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
+    minWidth: 0,
   },
   header: {
     flexDirection: 'row',
@@ -524,6 +525,7 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: 16,
     paddingTop: 12,
+    minWidth: 0,
   },
   noticeBox: {
     paddingVertical: 16,
@@ -593,6 +595,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 10,
     marginBottom: 8,
+    minWidth: 0,
+    overflow: 'hidden',
   },
   componentName: {
     fontSize: 13,

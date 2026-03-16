@@ -39,4 +39,6 @@ export interface UploadedSpectrum {
   name: string;
   type: 'absorption' | 'emission';
   data: SpectrumData[];
+  /** Original file name when uploaded (e.g. "measurement.txt") */
+  fileName?: string;
 }
