@@ -274,16 +274,19 @@ export function SpectrumChart({ data, isLoading, distributions = [] }: SpectrumC
     if (validData.length === 0) return undefined;
 
     const allXValues = validData.map((p) => p.wavelength).filter(Number.isFinite);
+    const spectrumStarts = data
+      .map((s) => s.data.map((p) => p.wavelength).filter(Number.isFinite))
+      .filter((wavelengths) => wavelengths.length > 0)
+      .map((wavelengths) => Math.min(...wavelengths));
     const allYValues = validData.flatMap((p) =>
       yKeys.map((k) => p[k]).filter((v) => v !== null && v !== undefined && Number.isFinite(v)),
     );
 
     if (allXValues.length === 0 || allYValues.length === 0) return undefined;
 
-    let xMin = Math.min(...allXValues);
+    let xMin = spectrumStarts.length > 0 ? Math.min(...spectrumStarts) : Math.min(...allXValues);
     let xMax = Math.max(...allXValues);
-    // Round to STEP_NM for clean axis ticks (e.g. 200, 250, 300)
-    xMin = Math.floor(xMin / STEP_NM) * STEP_NM;
+    // Keep true spectral start on X min; only round max for cleaner right-side ticks.
     xMax = Math.ceil(xMax / STEP_NM) * STEP_NM;
     let yMin = Math.min(...allYValues);
     let yMax = Math.max(...allYValues);
